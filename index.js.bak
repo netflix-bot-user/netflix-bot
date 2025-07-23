@@ -1,0 +1,150 @@
+require("dotenv").config();
+const TelegramBot = require("node-telegram-bot-api");
+const Imap = require("imap");
+const { simpleParser } = require("mailparser");
+
+let userEmail = "";
+let userPassword = "";
+
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "Choose what you want to fetch:", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "🔐 Sign-in Code" }],
+        [{ text: "🏠 Household Access" }],
+      ],
+      resize_keyboard: true,
+    },
+  });
+});
+
+bot.onText(/\/setgmail (.+) (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  userEmail = match[1];
+  userPassword = match[2];
+
+  console.log(`📧 Gmail set: ${userEmail}`);
+  bot.sendMessage(chatId, `✅ Gmail set for *${userEmail}*. Now press /start`, {
+    parse_mode: "Markdown",
+  });
+});
+
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  if (text === "🔐 Sign-in Code" || text === "🏠 Household Access") {
+    bot.sendMessage(chatId, "⏳ Checking Gmail...");
+    console.log("📨 Fetch requested:", text);
+
+    const imap = new Imap({
+      user: userEmail,
+      password: userPassword,
+      host: "imap.gmail.com",
+      port: 993,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+    });
+
+    imap.once("ready", function () {
+      console.log("✅ IMAP connected.");
+      imap.openBox("INBOX", false, function (err, box) {
+        if (err) {
+          console.log("📦 Inbox error:", err);
+          bot.sendMessage(chatId, "❌ Error opening inbox.");
+          imap.end();
+          return;
+        }
+
+        const searchCriteria = [["FROM", "Netflix"], ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)]];
+        const fetchOptions = { bodies: ["HEADER", "TEXT"], struct: true };
+
+        imap.search(searchCriteria, function (err, results) {
+          if (err || results.length === 0) {
+            console.log("📭 No matching emails.");
+            bot.sendMessage(chatId, "❌ No matching Netflix mail found.");
+            imap.end();
+            return;
+          }
+
+          const latest = results[results.length - 1];
+          console.log("📥 Fetching latest email:", latest);
+          const f = imap.fetch(latest, fetchOptions);
+
+          f.on("message", function (msg, seqno) {
+            let responded = false;
+
+            msg.on("body", function (stream, info) {
+              simpleParser(stream, async (err, parsed) => {
+                if (err) {
+                  console.log("❌ Parse error:", err);
+                  if (!responded) {
+                    bot.sendMessage(chatId, "❌ Error parsing email.");
+                    responded = true;
+                  }
+                  imap.end();
+                  return;
+                }
+
+                const body = parsed.text || "";
+                console.log("📨 Email body received.");
+
+                if (text === "🔐 Sign-in Code" && !responded && body.includes("sign in to Netflix")) {
+                  const codeMatch = body.match(/\b\d{4}\b/);
+                  if (codeMatch) {
+                    responded = true;
+                    console.log("🔐 Code found:", codeMatch[0]);
+                    bot.sendMessage(chatId, `🔐 Your Netflix Sign-in Code is: *${codeMatch[0]}*`, {
+                      parse_mode: "Markdown",
+                    });
+                  }
+                } else if (text === "🏠 Household Access" && !responded && body.includes("accountaccess")) {
+                  const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
+                  if (linkMatch) {
+                    responded = true;
+                    console.log("🏠 Link found:", linkMatch[0]);
+                    bot.sendMessage(chatId, `🏠 Your Netflix Household Link:\n${linkMatch[0]}`);
+                  }
+                }
+
+                if (!responded) {
+                  console.log("❌ Email didn't contain expected info.");
+                  bot.sendMessage(chatId, "❌ No useful Netflix info found.");
+                  responded = true;
+                }
+
+                imap.end();
+              });
+            });
+          });
+
+          f.once("error", function (err) {
+            console.log("❌ Fetch error:", err);
+            bot.sendMessage(chatId, `❌ Fetch error: ${err.message}`);
+            imap.end();
+          });
+
+          f.once("end", function () {
+            console.log("📥 Email fetch complete.");
+            imap.end();
+          });
+        });
+      });
+    });
+
+    imap.once("error", function (err) {
+      console.log("❌ IMAP error:", err);
+      bot.sendMessage(chatId, `❌ IMAP error: ${err.message}`);
+      imap.end();
+    });
+
+    imap.once("end", function () {
+      console.log("📴 IMAP connection closed.");
+    });
+
+    imap.connect();
+  }
+});
