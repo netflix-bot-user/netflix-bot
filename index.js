@@ -17,79 +17,74 @@ try {
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// 🟢 Start button with custom keyboard
+// 🟢 /start command with inline buttons
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username || msg.from.first_name;
 
-  bot.sendMessage(chatId, `नमस्ते @${username}!\nबॉट में नीचे दिए गए विकल्पों से काम करें:`, {
+  bot.sendMessage(chatId, `Hello @${username}!\nChoose what you want to fetch:`, {
     reply_markup: {
-      keyboard: [
-        [{ text: "🔐 Sign-in Code" }, { text: "🏠 Household Access" }],
-        [{ text: "📥 Set Gmail" }, { text: "📧 My Gmail" }, { text: "📤 Delete Gmail" }],
-      ],
-      resize_keyboard: true,
-    },
+      inline_keyboard: [
+        [
+          { text: "🔐 Sign-in Code", callback_data: "signin" },
+          { text: "🏠 Household Access", callback_data: "household" }
+        ],
+        [
+          { text: "📥 Set Gmail", callback_data: "setgmail" },
+          { text: "📧 My Gmail", callback_data: "mygmail" },
+          { text: "📤 Delete Gmail", callback_data: "deletegmail" }
+        ]
+      ]
+    }
   });
 });
 
-// 📩 Handle all button-based input
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-  const username = msg.from.username || msg.from.first_name;
-  const text = msg.text;
-
+// 📩 Handle inline button presses
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const userId = query.from.id.toString();
+  const username = query.from.username || query.from.first_name;
+  const data = query.data;
   const isAdmin = ADMIN_IDS.includes(userId);
 
-  // 📥 Set Gmail button
-  if (text === "📥 Set Gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ केवल Admin ही Gmail सेट कर सकता है।");
-    bot.sendMessage(chatId, "✉️ कृपया अपना Gmail और App Password इस format में भेजें:\n`youremail@gmail.com yourpassword`", {
-      parse_mode: "Markdown",
+  // Button actions
+  if (data === "setgmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can set Gmail.");
+    return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\n`youremail@gmail.com yourpassword`", {
+      parse_mode: "Markdown"
     });
-    return;
   }
 
-  // 📧 My Gmail
-  if (text === "📧 My Gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ केवल Admin ही देख सकता है।");
-    const data = gmailStore[userId];
-    if (!data) return bot.sendMessage(chatId, "⚠️ कोई Gmail सेट नहीं है।");
-    return bot.sendMessage(chatId, `📧 आपका सेट Gmail है: *${data.email}*`, { parse_mode: "Markdown" });
+  if (data === "mygmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can view this.");
+    const info = gmailStore[userId];
+    if (!info) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
+    return bot.sendMessage(chatId, `📧 Your saved Gmail: *${info.email}*`, {
+      parse_mode: "Markdown"
+    });
   }
 
-  // 📤 Delete Gmail
-  if (text === "📤 Delete Gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ केवल Admin ही हटा सकता है।");
+  if (data === "deletegmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can delete Gmail.");
     if (gmailStore[userId]) {
       delete gmailStore[userId];
       fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-      return bot.sendMessage(chatId, "🗑️ आपका Gmail हटा दिया गया है।");
+      return bot.sendMessage(chatId, "🗑️ Gmail deleted.");
     } else {
-      return bot.sendMessage(chatId, "⚠️ कोई Gmail सेट नहीं था।");
+      return bot.sendMessage(chatId, "⚠️ No Gmail to delete.");
     }
   }
 
-  // Gmail details save
-  if (text.includes("@gmail.com") && text.split(" ").length === 2 && isAdmin) {
-    const [email, password] = text.split(" ");
-    gmailStore[userId] = { email, password };
-    fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-    return bot.sendMessage(chatId, `✅ Gmail सेट कर दिया गया: *${email}*`, { parse_mode: "Markdown" });
-  }
+  if (data === "signin" || data === "household") {
+    const info = gmailStore[userId];
+    if (!info) return bot.sendMessage(chatId, "⚠️ Please use Set Gmail first.");
 
-  // 🔐 OTP / Link Fetching
-  if (text === "🔐 Sign-in Code" || text === "🏠 Household Access") {
-    const userData = gmailStore[userId];
-    if (!userData) return bot.sendMessage(chatId, "⚠️ कृपया पहले 📥 Set Gmail का उपयोग करें।");
-
-    const { email, password } = userData;
-    bot.sendMessage(chatId, "⏳ Gmail inbox पढ़ा जा रहा है...");
+    const { email, password } = info;
+    bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
 
     const imap = new Imap({
       user: email,
-      password: password,
+      password,
       host: "imap.gmail.com",
       port: 993,
       tls: true,
@@ -99,7 +94,7 @@ bot.on("message", async (msg) => {
     imap.once("ready", function () {
       imap.openBox("INBOX", false, function (err, box) {
         if (err) {
-          bot.sendMessage(chatId, `❌ INBOX Error: ${err.message}`);
+          bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
           imap.end();
           return;
         }
@@ -109,7 +104,7 @@ bot.on("message", async (msg) => {
 
         imap.search(searchCriteria, function (err, results) {
           if (err || results.length === 0) {
-            bot.sendMessage(chatId, "❌ Netflix से कोई मेल नहीं मिला।");
+            bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
             imap.end();
             return;
           }
@@ -122,7 +117,7 @@ bot.on("message", async (msg) => {
             msgFetch.on("body", function (stream) {
               simpleParser(stream, async (err, parsed) => {
                 if (err) {
-                  bot.sendMessage(chatId, "❌ मेल पढ़ने में error आया।");
+                  bot.sendMessage(chatId, "❌ Error reading email.");
                   responded = true;
                   imap.end();
                   return;
@@ -130,25 +125,25 @@ bot.on("message", async (msg) => {
 
                 const body = parsed.text || "";
 
-                if (text === "🔐 Sign-in Code" && !responded && body.includes("sign in to Netflix")) {
+                if (data === "signin" && !responded && body.includes("sign in to Netflix")) {
                   const codeMatch = body.match(/\b\d{4}\b/);
                   if (codeMatch) {
                     responded = true;
-                    bot.sendMessage(chatId, `👋 Hi @${username},\n🔐 आपका Netflix OTP है: *${codeMatch[0]}*`, {
+                    bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: *${codeMatch[0]}*`, {
                       parse_mode: "Markdown",
                     });
                   }
-                } else if (text === "🏠 Household Access" && !responded && body.includes("accountaccess")) {
+                } else if (data === "household" && !responded && body.includes("accountaccess")) {
                   const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
                   if (linkMatch) {
                     responded = true;
-                    bot.sendMessage(chatId, `👋 Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
+                    bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
                   }
                 }
 
                 if (!responded) {
                   responded = true;
-                  bot.sendMessage(chatId, "❌ उपयोगी Netflix जानकारी नहीं मिली।");
+                  bot.sendMessage(chatId, "❌ No valid Netflix info found.");
                 }
 
                 imap.end();
@@ -162,7 +157,7 @@ bot.on("message", async (msg) => {
           });
 
           f.once("end", function () {
-            console.log("📥 Email fetch complete. IMAP disconnected.");
+            console.log("✅ IMAP fetch complete.");
           });
         });
       });
@@ -173,5 +168,20 @@ bot.on("message", async (msg) => {
     });
 
     imap.connect();
+  }
+});
+
+// 📨 Handle Gmail input message
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+  const text = msg.text;
+  const isAdmin = ADMIN_IDS.includes(userId);
+
+  if (text.includes("@gmail.com") && text.split(" ").length === 2 && isAdmin) {
+    const [email, password] = text.split(" ");
+    gmailStore[userId] = { email, password };
+    fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
+    return bot.sendMessage(chatId, `✅ Gmail set successfully: *${email}*`, { parse_mode: "Markdown" });
   }
 });
