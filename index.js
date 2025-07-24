@@ -8,6 +8,7 @@ const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
 const GMAIL_FILE = "gmail-store.json";
 let gmailStore = {};
 
+// 🔄 Load saved Gmail accounts
 try {
   gmailStore = JSON.parse(fs.readFileSync(GMAIL_FILE, "utf-8"));
 } catch {
@@ -16,23 +17,29 @@ try {
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
+// 🟢 /start command with inline buttons
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username || msg.from.first_name;
 
-  bot.sendMessage(chatId, `Hi @${username}!\nChoose what you want to fetch:`, {
+  bot.sendMessage(chatId, `Hello @${username}!\nChoose what you want to fetch:`, {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "🔐 Sign-in Code", callback_data: "signin_code" }],
-        [{ text: "🏠 Household Access", callback_data: "household_access" }],
-        [{ text: "📥 Set Gmail", callback_data: "set_gmail" }],
-        [{ text: "📧 My Gmail", callback_data: "my_gmail" }],
-        [{ text: "📤 Delete Gmail", callback_data: "delete_gmail" }],
-      ],
-    },
+        [
+          { text: "🔐 Sign-in Code", callback_data: "signin" },
+          { text: "🏠 Household Access", callback_data: "household" }
+        ],
+        [
+          { text: "📥 Set Gmail", callback_data: "setgmail" },
+          { text: "📧 My Gmail", callback_data: "mygmail" },
+          { text: "📤 Delete Gmail", callback_data: "deletegmail" }
+        ]
+      ]
+    }
   });
 });
 
+// 📩 Handle inline button presses
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const userId = query.from.id.toString();
@@ -40,43 +47,44 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   const isAdmin = ADMIN_IDS.includes(userId);
 
-  if (data === "set_gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only Admins can set Gmail.");
-    return bot.sendMessage(chatId, "📧 Please send your Gmail and app password like:\n`your@gmail.com yourpassword`", {
-      parse_mode: "Markdown",
+  // Button actions
+  if (data === "setgmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can set Gmail.");
+    return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\n`youremail@gmail.com yourpassword`", {
+      parse_mode: "Markdown"
     });
   }
 
-  if (data === "my_gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only Admins can access this.");
-    const userGmail = gmailStore[userId];
-    if (!userGmail) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
-    return bot.sendMessage(chatId, `📧 Your saved Gmail is: *${userGmail.email}*`, {
-      parse_mode: "Markdown",
+  if (data === "mygmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can view this.");
+    const info = gmailStore[userId];
+    if (!info) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
+    return bot.sendMessage(chatId, `📧 Your saved Gmail: *${info.email}*`, {
+      parse_mode: "Markdown"
     });
   }
 
-  if (data === "delete_gmail") {
-    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only Admins can delete Gmail.");
+  if (data === "deletegmail") {
+    if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can delete Gmail.");
     if (gmailStore[userId]) {
       delete gmailStore[userId];
       fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
       return bot.sendMessage(chatId, "🗑️ Gmail deleted.");
     } else {
-      return bot.sendMessage(chatId, "⚠️ No Gmail was set.");
+      return bot.sendMessage(chatId, "⚠️ No Gmail to delete.");
     }
   }
 
-  if (data === "signin_code" || data === "household_access") {
-    const userData = gmailStore[userId];
-    if (!userData) return bot.sendMessage(chatId, "⚠️ Please set Gmail first using 📥 Set Gmail.");
+  if (data === "signin" || data === "household") {
+    const info = gmailStore[userId];
+    if (!info) return bot.sendMessage(chatId, "⚠️ Please use Set Gmail first.");
 
-    const { email, password } = userData;
+    const { email, password } = info;
     bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
 
     const imap = new Imap({
       user: email,
-      password: password,
+      password,
       host: "imap.gmail.com",
       port: 993,
       tls: true,
@@ -86,7 +94,7 @@ bot.on("callback_query", async (query) => {
     imap.once("ready", function () {
       imap.openBox("INBOX", false, function (err, box) {
         if (err) {
-          bot.sendMessage(chatId, `❌ INBOX Error: ${err.message}`);
+          bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
           imap.end();
           return;
         }
@@ -96,7 +104,7 @@ bot.on("callback_query", async (query) => {
 
         imap.search(searchCriteria, function (err, results) {
           if (err || results.length === 0) {
-            bot.sendMessage(chatId, "❌ No email found from Netflix.");
+            bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
             imap.end();
             return;
           }
@@ -109,7 +117,7 @@ bot.on("callback_query", async (query) => {
             msgFetch.on("body", function (stream) {
               simpleParser(stream, async (err, parsed) => {
                 if (err) {
-                  bot.sendMessage(chatId, "❌ Error reading mail.");
+                  bot.sendMessage(chatId, "❌ Error reading email.");
                   responded = true;
                   imap.end();
                   return;
@@ -117,19 +125,19 @@ bot.on("callback_query", async (query) => {
 
                 const body = parsed.text || "";
 
-                if (data === "signin_code" && !responded && body.includes("sign in to Netflix")) {
+                if (data === "signin" && !responded && body.includes("sign in to Netflix")) {
                   const codeMatch = body.match(/\b\d{4}\b/);
                   if (codeMatch) {
                     responded = true;
-                    bot.sendMessage(chatId, `👋 Hi @${username},\n🔐 Your Netflix OTP is: *${codeMatch[0]}*`, {
+                    bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: *${codeMatch[0]}*`, {
                       parse_mode: "Markdown",
                     });
                   }
-                } else if (data === "household_access" && !responded && body.includes("accountaccess")) {
+                } else if (data === "household" && !responded && body.includes("accountaccess")) {
                   const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
                   if (linkMatch) {
                     responded = true;
-                    bot.sendMessage(chatId, `👋 Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
+                    bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
                   }
                 }
 
@@ -149,7 +157,7 @@ bot.on("callback_query", async (query) => {
           });
 
           f.once("end", function () {
-            console.log("📥 Email fetch complete. IMAP disconnected.");
+            console.log("✅ IMAP fetch complete.");
           });
         });
       });
@@ -163,7 +171,8 @@ bot.on("callback_query", async (query) => {
   }
 });
 
-bot.on("message", (msg) => {
+// 📨 Handle Gmail input message
+bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const text = msg.text;
@@ -173,8 +182,6 @@ bot.on("message", (msg) => {
     const [email, password] = text.split(" ");
     gmailStore[userId] = { email, password };
     fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-    return bot.sendMessage(chatId, `✅ Gmail set: *${email}*`, {
-      parse_mode: "Markdown",
-    });
+    return bot.sendMessage(chatId, `✅ Gmail set successfully: *${email}*`, { parse_mode: "Markdown" });
   }
 });
