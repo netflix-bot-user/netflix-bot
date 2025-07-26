@@ -47,21 +47,16 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   const isAdmin = ADMIN_IDS.includes(userId);
 
-  // Button actions
   if (data === "setgmail") {
     if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can set Gmail.");
-    return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\n`youremail@gmail.com yourpassword`", {
-      parse_mode: "Markdown"
-    });
+    return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\nyouremail@gmail.com yourpassword");
   }
 
   if (data === "mygmail") {
     if (!isAdmin) return bot.sendMessage(chatId, "❌ Only admin can view this.");
     const info = gmailStore[userId];
     if (!info) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
-    return bot.sendMessage(chatId, `📧 Your saved Gmail: *${info.email}*`, {
-      parse_mode: "Markdown"
-    });
+    return bot.sendMessage(chatId, `📧 Your saved Gmail: ${info.email}`);
   }
 
   if (data === "deletegmail") {
@@ -129,9 +124,7 @@ bot.on("callback_query", async (query) => {
                   const codeMatch = body.match(/\b\d{4}\b/);
                   if (codeMatch) {
                     responded = true;
-                    bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: *${codeMatch[0]}*`, {
-                      parse_mode: "Markdown",
-                    });
+                    bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: ${codeMatch[0]}`);
                   }
                 } else if (data === "household" && !responded && body.includes("accountaccess")) {
                   const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
@@ -182,6 +175,6 @@ bot.on("message", async (msg) => {
     const [email, password] = text.split(" ");
     gmailStore[userId] = { email, password };
     fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-    return bot.sendMessage(chatId, `✅ Gmail set successfully: *${email}*`, { parse_mode: "Markdown" });
+    return bot.sendMessage(chatId, `✅ Gmail set successfully: ${email}`);
   }
 });
