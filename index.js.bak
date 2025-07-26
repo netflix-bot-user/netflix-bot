@@ -20,22 +20,31 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 // 🟢 /start command with inline buttons
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
   const username = msg.from.username || msg.from.first_name;
+  const isAdmin = ADMIN_IDS.includes(userId);
+
+  const adminButtons = [
+    { text: "📥 Set Gmail", callback_data: "setgmail" },
+    { text: "📧 My Gmail", callback_data: "mygmail" },
+    { text: "📤 Delete Gmail", callback_data: "deletegmail" }
+  ];
+
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: "🔐 Sign-in Code", callback_data: "signin" },
+        { text: "🏠 Household Access", callback_data: "household" }
+      ]
+    ]
+  };
+
+  if (isAdmin) {
+    replyMarkup.inline_keyboard.push(adminButtons);
+  }
 
   bot.sendMessage(chatId, `Hello @${username}!\nChoose what you want to fetch:`, {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🔐 Sign-in Code", callback_data: "signin" },
-          { text: "🏠 Household Access", callback_data: "household" }
-        ],
-        [
-          { text: "📥 Set Gmail", callback_data: "setgmail" },
-          { text: "📧 My Gmail", callback_data: "mygmail" },
-          { text: "📤 Delete Gmail", callback_data: "deletegmail" }
-        ]
-      ]
-    }
+    reply_markup: replyMarkup
   });
 });
 
@@ -71,8 +80,17 @@ bot.on("callback_query", async (query) => {
   }
 
   if (data === "signin" || data === "household") {
-    const info = gmailStore[userId];
-    if (!info) return bot.sendMessage(chatId, "⚠️ Please use Set Gmail first.");
+    let info = gmailStore[userId];
+
+    // ✅ If user has not set Gmail, fallback to any admin's Gmail
+    if (!info) {
+      const adminGmail = Object.entries(gmailStore).find(([id]) => ADMIN_IDS.includes(id));
+      if (adminGmail) {
+        info = adminGmail[1];
+      } else {
+        return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail first.");
+      }
+    }
 
     const { email, password } = info;
     bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
