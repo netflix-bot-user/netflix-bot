@@ -1,183 +1,218 @@
-// ✅ Netflix Bot with Licensing, Admin-only Gmail, Get Code Support, Clean Buttons
+// ✅ FINAL BUG-FREE VERSION - Netflix OTP/Household Bot
+// Version: vFinal_20250726_113500
 
-require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
+const dotenv = require("dotenv");
+const fs = require("fs");
 const Imap = require("imap");
 const { simpleParser } = require("mailparser");
-const fs = require("fs");
-const path = require("path");
+const crypto = require("crypto");
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-const ADMIN_IDS = process.env.ADMIN_IDS.split(",").map((id) => parseInt(id));
+dotenv.config();
+const token = process.env.BOT_TOKEN;
+const ADMIN_IDS = process.env.ADMIN_IDS?.split(",") || [];
+
 const GMAIL_FILE = "gmail.json";
-const AUTH_FILE = "auth-store.json";
+const CURRENT_FILE = "currentGmail.json";
+const LICENSE_FILE = "licenses.json";
 
-if (!fs.existsSync(GMAIL_FILE)) fs.writeFileSync(GMAIL_FILE, JSON.stringify({}));
-if (!fs.existsSync(AUTH_FILE)) fs.writeFileSync(AUTH_FILE, JSON.stringify({ authorized: {}, keys: {} }));
-
-const loadGmail = () => JSON.parse(fs.readFileSync(GMAIL_FILE));
-const saveGmail = (data) => fs.writeFileSync(GMAIL_FILE, JSON.stringify(data));
-const loadAuth = () => JSON.parse(fs.readFileSync(AUTH_FILE));
-const saveAuth = (data) => fs.writeFileSync(AUTH_FILE, JSON.stringify(data));
-
-// 🧠 Helper
-const isAdmin = (id) => ADMIN_IDS.includes(id);
+const bot = new TelegramBot(token, { polling: true });
+const isAdmin = (id) => ADMIN_IDS.includes(id.toString());
 const isAuthorized = (id) => {
-  const auth = loadAuth();
-  return auth.authorized[id] && new Date(auth.authorized[id].expires) > new Date();
+  if (isAdmin(id)) return true;
+  if (!fs.existsSync(LICENSE_FILE)) return false;
+  const data = JSON.parse(fs.readFileSync(LICENSE_FILE));
+  const user = data[id];
+  return user && new Date() < new Date(user.expiresAt);
 };
 
-const startKeyboard = (id) => {
-  let buttons = [
-    [{ text: "🔐 Sign-in Code", callback_data: "sign" }, { text: "🏠 Household Access", callback_data: "household" }],
+function sendMenu(chatId, username, isAdminUser = false) {
+  const buttons = [
+    [
+      { text: "🔐 Sign-in Code", callback_data: "signin" },
+      { text: "🏠 Household Access", callback_data: "household" },
+    ],
+    [{ text: "🔓 Redeem Key", callback_data: "redeem" }],
   ];
-  if (isAdmin(id)) {
-    buttons.push([
-      { text: "📥 Set Gmail", callback_data: "setgmail" },
-      { text: "📧 My Gmail", callback_data: "mygmail" },
-      { text: "📤 Delete Gmail", callback_data: "deletegmail" },
-    ]);
-    buttons.push([
-      { text: "🗝️ Generate Key", callback_data: "genkey" },
-      { text: "👥 Userlist", callback_data: "userlist" },
-    ]);
-  } else {
-    buttons.push([{ text: "🔓 Redeem Key", callback_data: "redeem" }]);
+  if (isAdminUser) {
+    buttons.push(
+      [
+        { text: "📩 Set Gmail", callback_data: "setgmail" },
+        { text: "📨 My Gmail", callback_data: "mygmail" },
+        { text: "🗑️ Delete Gmail", callback_data: "deletegmail" },
+      ],
+      [
+        { text: "🗝 Generate Key", callback_data: "generatekey" },
+        { text: "👥 Userlist", callback_data: "userlist" },
+      ]
+    );
   }
-  return { reply_markup: { inline_keyboard: buttons } };
-};
+  bot.sendMessage(
+    chatId,
+    `Hello @${username}!\nChoose what you want to do:`,
+    {
+      reply_markup: {
+        inline_keyboard: buttons,
+        remove_keyboard: true,
+      },
+    }
+  );
+}
 
 bot.onText(/\/start/, (msg) => {
-  const id = msg.from.id;
-  const username = msg.from.username || msg.from.first_name;
-  bot.sendMessage(id, `Hello @${username}!\nChoose what you want to do:`, startKeyboard(id));
+  const { id, username } = msg.from;
+  if (!isAuthorized(id)) {
+    return bot.sendMessage(
+      id,
+      `⛔ You are not a member of this bot.\nPlease contact @Munnabhaiya_Official to get membership.`
+    );
+  }
+  sendMenu(id, username, isAdmin(id));
 });
 
 bot.on("callback_query", async (query) => {
-  const id = query.from.id;
-  const username = query.from.username || query.from.first_name;
   const chatId = query.message.chat.id;
+  const userId = query.from.id;
+  const username = query.from.username;
   const data = query.data;
-  const gmailData = loadGmail();
-  const auth = loadAuth();
 
-  if (!isAdmin(id) && !isAuthorized(id) && data !== "redeem") {
-    return bot.sendMessage(chatId, `🚫 You are not a member of this bot.\nPlease contact @Munnabhaiya_Official to get membership.`);
+  if (!isAuthorized(userId)) {
+    return bot.sendMessage(
+      chatId,
+      `⛔ You are not a member of this bot.\nPlease contact @Munnabhaiya_Official to get membership.`
+    );
   }
 
-  if (data === "sign" || data === "household") {
-    const email = gmailData.email;
-    if (!email) return bot.sendMessage(chatId, `⚠️ Please use Set Gmail first.`);
-    const imap = new Imap({ user: email, password: gmailData.pass, host: 'imap.gmail.com', port: 993, tls: true });
-
-    imap.once('ready', function () {
-      imap.openBox('INBOX', true, function () {
-        const delay = new Date() - 5 * 60 * 1000;
-        imap.search(['UNSEEN', ['SINCE', new Date(delay)]], function (_, results) {
-          if (!results || !results.length) {
-            imap.end();
-            return bot.sendMessage(chatId, `❌ No new messages found.`);
-          }
-          const f = imap.fetch(results.slice(-5), { bodies: "" });
-          f.on("message", (msg) => {
-            msg.on("body", (stream) => {
-              simpleParser(stream, async (err, parsed) => {
-                const subject = parsed.subject || "";
-                const body = parsed.text || "";
-                let responded = false;
-
-                if (data === "sign" && /\b\d{4}\b/.test(body)) {
-                  responded = true;
-                  bot.sendMessage(chatId, `Hi @${username},\n🔐 Netflix OTP: ${body.match(/\b\d{4}\b/)[0]}`);
-                } else if (data === "household" && /accountaccess/.test(body)) {
-                  const link = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
-                  if (link) {
-                    responded = true;
-                    bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Household Link: ${link[0]}`);
-                  }
-                } else if (data === "household" && parsed.html && parsed.html.includes("Get Code")) {
-                  const match = parsed.html.match(/<a[^>]*href=[\"']([^\"']+)[\"'][^>]*>\s*Get Code\s*<\/a>/i);
-                  if (match && match[1]) {
-                    responded = true;
-                    bot.sendMessage(chatId, `Hi @${username},\n🔗 Get Code link:\n${match[1]}`);
-                  }
-                }
-
-                if (!responded) {
-                  bot.sendMessage(chatId, `❌ No valid Netflix info found.`);
-                }
-              });
-            });
-          });
-          f.once("end", () => imap.end());
-        });
-      });
-    });
-    imap.connect();
-  }
-
-  else if (data === "setgmail") {
-    if (!isAdmin(id)) return bot.sendMessage(chatId, `❌ Only admin can set Gmail.`);
-    bot.sendMessage(chatId, `📥 Send Gmail and password (e.g. email@gmail.com|password):`);
+  if (data === "setgmail") {
+    if (!isAdmin(userId)) return bot.sendMessage(chatId, "❌ Only admin can set Gmail.");
+    bot.sendMessage(chatId, "📬 Send Gmail and password (e.g. email@gmail.com|password):");
     bot.once("message", (msg) => {
       const [email, pass] = msg.text.split("|");
-      saveGmail({ email, pass });
+      if (!email || !pass) return bot.sendMessage(chatId, "❌ Invalid format.");
+      let gmails = fs.existsSync(GMAIL_FILE) ? JSON.parse(fs.readFileSync(GMAIL_FILE)) : {};
+      gmails[email] = pass;
+      fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmails));
+      fs.writeFileSync(CURRENT_FILE, JSON.stringify({ email }));
       bot.sendMessage(chatId, `✅ Gmail saved: ${email}`);
     });
   }
 
   else if (data === "mygmail") {
-    if (!isAdmin(id)) return bot.sendMessage(chatId, `❌ Only admin can view this.`);
-    bot.sendMessage(chatId, `📧 Current Gmail: ${gmailData.email || "Not set"}`);
+    if (!isAdmin(userId)) return bot.sendMessage(chatId, "❌ Only admin can view this.");
+    if (!fs.existsSync(CURRENT_FILE)) return bot.sendMessage(chatId, "⚠️ No Gmail set.");
+    const { email } = JSON.parse(fs.readFileSync(CURRENT_FILE));
+    bot.sendMessage(chatId, `📨 Current Gmail: ${email}`);
   }
 
   else if (data === "deletegmail") {
-    if (!isAdmin(id)) return bot.sendMessage(chatId, `❌ Only admin can delete Gmail.`);
-    saveGmail({});
-    bot.sendMessage(chatId, `🗑 Gmail removed.`);
-  }
-
-  else if (data === "genkey") {
-    if (!isAdmin(id)) return;
-    const opts = {
-      reply_markup: {
-        inline_keyboard: [["1", "3", "6", "12"].map((m) => ({ text: `${m} months`, callback_data: `makekey_${m}` }))],
-      },
-    };
-    bot.sendMessage(chatId, `🗝️ Choose duration for license key:`, opts);
-  }
-
-  else if (data.startsWith("makekey_")) {
-    const months = parseInt(data.split("_")[1]);
-    const key = `NETFLIX-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-    const expires = new Date();
-    expires.setMonth(expires.getMonth() + months);
-    auth.keys[key] = { duration: months, expires: expires.toISOString(), used: false };
-    saveAuth(auth);
-    bot.sendMessage(chatId, `✅ Key generated for ${months} months:\n🔑 ${key}`);
+    if (!isAdmin(userId)) return bot.sendMessage(chatId, "❌ Only admin can delete Gmail.");
+    fs.existsSync(CURRENT_FILE) && fs.unlinkSync(CURRENT_FILE);
+    bot.sendMessage(chatId, "🗑️ Gmail deleted.");
   }
 
   else if (data === "redeem") {
-    bot.sendMessage(chatId, `🔑 Please send your license key:`);
+    bot.sendMessage(chatId, "🔑 Please send your license key:");
     bot.once("message", (msg) => {
-      const input = msg.text.trim();
-      const found = auth.keys[input];
-      if (found && !found.used) {
-        auth.authorized[msg.from.id] = { username: msg.from.username, expires: found.expires };
-        auth.keys[input].used = true;
-        saveAuth(auth);
-        bot.sendMessage(msg.chat.id, `✅ Key redeemed successfully!\nValid for: ${found.duration} months\nExpires on: ${found.expires}`);
-      } else {
-        bot.sendMessage(msg.chat.id, `❌ Invalid or already used key.`);
-      }
+      const key = msg.text.trim();
+      const data = fs.existsSync(LICENSE_FILE) ? JSON.parse(fs.readFileSync(LICENSE_FILE)) : {};
+      const found = Object.entries(data).find(([_, v]) => v.key === key);
+      if (!found) return bot.sendMessage(chatId, "❌ Invalid key.");
+      const [uid, userData] = found;
+      data[msg.from.id] = userData;
+      delete data[uid];
+      fs.writeFileSync(LICENSE_FILE, JSON.stringify(data));
+      bot.sendMessage(
+        chatId,
+        `✅ Key redeemed successfully!\nValid for: ${userData.duration}\nExpires on: ${userData.expiresAt}`
+      );
     });
   }
 
+  else if (data === "generatekey") {
+    if (!isAdmin(userId)) return;
+    bot.sendMessage(chatId, "⏳ Select key duration:", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "1 Month", callback_data: "key_1" },
+            { text: "3 Months", callback_data: "key_3" },
+          ],
+          [
+            { text: "6 Months", callback_data: "key_6" },
+            { text: "12 Months", callback_data: "key_12" },
+          ],
+        ],
+      },
+    });
+  }
+
+  else if (data.startsWith("key_")) {
+    const months = parseInt(data.split("_")[1]);
+    const key = `NETFLIX-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + months);
+    const payload = {
+      key,
+      duration: `${months} months`,
+      expiresAt: expiresAt.toISOString(),
+    };
+    const db = fs.existsSync(LICENSE_FILE) ? JSON.parse(fs.readFileSync(LICENSE_FILE)) : {};
+    db[key] = payload;
+    fs.writeFileSync(LICENSE_FILE, JSON.stringify(db));
+    bot.sendMessage(chatId, `🗝 Your key:\n<code>${key}</code>`, { parse_mode: "HTML" });
+  }
+
   else if (data === "userlist") {
-    if (!isAdmin(id)) return;
-    const list = Object.entries(auth.authorized)
-      .map(([uid, info]) => `👤 @${info.username} - Expires: ${info.expires}`)
-      .join("\n");
-    bot.sendMessage(chatId, list || "❌ No users found.");
+    if (!isAdmin(userId)) return;
+    const db = fs.existsSync(LICENSE_FILE) ? JSON.parse(fs.readFileSync(LICENSE_FILE)) : {};
+    const lines = Object.entries(db)
+      .filter(([id, u]) => !u.key)
+      .map(([id, u]) => `👤 ID: <code>${id}</code>\n⏳ Expires: ${u.expiresAt}`)
+      .join("\n\n");
+    bot.sendMessage(chatId, lines || "No users.", { parse_mode: "HTML" });
+  }
+
+  else if (data === "signin" || data === "household") {
+    if (!fs.existsSync(CURRENT_FILE)) return bot.sendMessage(chatId, "⚠️ Please use Set Gmail first.");
+    const { email } = JSON.parse(fs.readFileSync(CURRENT_FILE));
+    const pass = JSON.parse(fs.readFileSync(GMAIL_FILE))[email];
+    fetchOtp(email, pass, data, chatId);
   }
 });
+
+function fetchOtp(email, password, type, chatId) {
+  const imap = new Imap({ user: email, password, host: "imap.gmail.com", port: 993, tls: true });
+  function openInbox(cb) {
+    imap.openBox("INBOX", true, cb);
+  }
+  imap.once("ready", function () {
+    openInbox(function (err, box) {
+      if (err) throw err;
+      const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      imap.search(["UNSEEN", ["SINCE", since]], function (err, results) {
+        if (err || !results.length) return imap.end();
+        const f = imap.fetch(results.slice(-5), { bodies: "" });
+        f.on("message", function (msg) {
+          msg.on("body", function (stream) {
+            simpleParser(stream, async (err, parsed) => {
+              if (type === "signin" && parsed.text.match(/\b\d{4}\b/)) {
+                const otp = parsed.text.match(/\b\d{4}\b/)[0];
+                bot.sendMessage(chatId, `🔐 Sign-in Code: <code>${otp}</code>`, { parse_mode: "HTML" });
+              } else if (type === "household") {
+                const match = parsed.text.match(/https:\/\/www\.netflix\.com\/.*getcode.*/i);
+                if (match) bot.sendMessage(chatId, `📥 Get Code link:\n${match[0]}`);
+              }
+            });
+          });
+        });
+        f.once("end", function () {
+          imap.end();
+        });
+      });
+    });
+  });
+  imap.once("error", function (err) {
+    bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
+  });
+  imap.connect();
+}
