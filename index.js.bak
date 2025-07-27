@@ -141,21 +141,19 @@ bot.on('callback_query', async query => {
   }
 
   else if (data === 'set_gmail' && isAdmin(id)) {
-    bot.sendMessage(chatId, '📩 Send Gmail credentials like this: `email|password`', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '📧 Send Gmail and App Password in this format:\n`youremail@gmail.com yourpassword`', { parse_mode: 'Markdown' });
     bot.once('message', m => {
-      const [email, password] = m.text.split('|');
+      const [email, password] = m.text.trim().split(' ');
       if (!email || !password) return bot.sendMessage(chatId, '❌ Invalid format.');
       gmailData = { email, password };
       saveGmail();
-      bot.sendMessage(chatId, `✅ Gmail set:
-${email}`);
+      bot.sendMessage(chatId, `✅ Gmail set:\n${email}`);
     });
   }
 
   else if (data === 'my_gmail' && isAdmin(id)) {
     if (!gmailData) return bot.sendMessage(chatId, '❌ Gmail not set.');
-    bot.sendMessage(chatId, `📨 Current Gmail:
-${gmailData.email}`);
+    bot.sendMessage(chatId, `📨 Current Gmail:\n${gmailData.email}`);
   }
 
   else if (data === 'delete_gmail' && isAdmin(id)) {

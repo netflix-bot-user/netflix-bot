@@ -78,7 +78,7 @@ bot.on('callback_query', async query => {
     });
 
     imap.once('ready', () => {
-      imap.openBox('INBOX', true, () => {
+      imap.openBox('INBOX', false, () => {
         const f = imap.seq.fetch('1:*', { bodies: '' });
         let found = false;
         f.on('message', msg => {
@@ -114,7 +114,7 @@ bot.on('callback_query', async query => {
       host: 'imap.gmail.com', port: 993, tls: true
     });
     imap.once('ready', () => {
-      imap.openBox('INBOX', true, () => {
+      imap.openBox('INBOX', false, () => {
         const f = imap.seq.fetch('1:*', { bodies: '' });
         let sent = false;
         f.on('message', msg => {
