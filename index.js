@@ -98,12 +98,56 @@ bot.on("callback_query", async (query) => {
   }
 
   if (data === "userlist") {
-    const entries = Object.entries(authStore.authorized);
-    if (entries.length === 0) return bot.sendMessage(chatId, "👥 No authorized users.");
+  const entries = Object.entries(authStore.authorized);
+  const list = entries.length
+    ? entries.map(([id, u]) => `👤 @${u.username || "unknown"} (ID: ${id})\n⏳ Expires: ${u.expires}`).join("\n\n")
+    : "👥 No authorized users.";
 
-    const list = entries.map(([id, u]) => `👤 @${u.username || "unknown"} (ID: ${id})\n⏳ Expires: ${u.expires}`).join("\n\n");
-    return bot.sendMessage(chatId, `📋 Authorized Users:\n\n${list}`);
-  }
+  return bot.sendMessage(chatId, `📋 Authorized Users:\n\n${list}`, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "➕ Add User", callback_data: "add_user" },
+          { text: "➖ Remove User", callback_data: "remove_user" }
+        ]
+      ]
+    }
+  });
+}
+if (data === "add_user") {
+  if (!isAdmin) return;
+  bot.sendMessage(chatId, "📩 Send user ID and username like this:\n`123456789 username`", { parse_mode: "Markdown" });
+
+  bot.once("message", (msg) => {
+    const parts = msg.text.trim().split(" ");
+    if (parts.length < 2) return bot.sendMessage(chatId, "⚠️ Invalid format.");
+
+    const [id, uname] = parts;
+    const expiry = new Date();
+    expiry.setMonth(expiry.getMonth() + 1); // default 1 month
+
+    authStore.authorized[id] = {
+      username: uname,
+      expires: expiry.toISOString()
+    };
+    saveAuth();
+    return bot.sendMessage(chatId, `✅ User @${uname} added successfully.`);
+  });
+}
+
+if (data === "remove_user") {
+  if (!isAdmin) return;
+  bot.sendMessage(chatId, "❌ Send user ID to remove:");
+
+  bot.once("message", (msg) => {
+    const id = msg.text.trim();
+    if (!authStore.authorized[id]) return bot.sendMessage(chatId, "⚠️ User not found.");
+
+    delete authStore.authorized[id];
+    saveAuth();
+    return bot.sendMessage(chatId, `🗑️ User ID ${id} removed.`);
+  });
+}
 
   if (data === "redeem") {
     bot.sendMessage(chatId, "🔑 Please send your license key:");
