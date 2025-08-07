@@ -13,7 +13,6 @@ const AUTH_FILE = "auth-store.json";
 
 let gmailStore = {};
 let authStore = { authorized: {}, keys: {} };
-let pendingUserAdd = {};
 
 // Load Gmail and Auth stores
 try { gmailStore = JSON.parse(fs.readFileSync(GMAIL_FILE, "utf-8")); } catch {}
@@ -124,39 +123,16 @@ if (data === "add_user") {
     if (parts.length < 2) return bot.sendMessage(chatId, "⚠️ Invalid format.");
 
     const [id, uname] = parts;
-    pendingUserAdd[userId] = { id, uname };
-    bot.sendMessage(chatId, "⏳ Select access duration:", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "1 Month", callback_data: "confirm_useradd_1" },
-            { text: "3 Months", callback_data: "confirm_useradd_3" }
-          ],
-          [
-            { text: "6 Months", callback_data: "confirm_useradd_6" },
-            { text: "12 Months", callback_data: "confirm_useradd_12" }
-          ]
-        ]
-      }
-    });
+    const expiry = new Date();
+    expiry.setMonth(expiry.getMonth() + 1); // default 1 month
+
+    authStore.authorized[id] = {
+      username: uname,
+      expires: expiry.toISOString()
+    };
+    saveAuth();
+    return bot.sendMessage(chatId, `✅ User @${uname} added successfully.`);
   });
-}
-
-if (data.startsWith("confirm_useradd_")) {
-  if (!isAdmin) return;
-  const months = parseInt(data.split("_")[2]);
-  const pending = pendingUserAdd[userId];
-  if (!pending) return bot.sendMessage(chatId, "⚠️ No pending user info. Please start again.");
-
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  authStore.authorized[pending.id] = {
-    username: pending.uname,
-    expires: expiry.toISOString()
-  };
-  saveAuth();
-  delete pendingUserAdd[userId];
-  return bot.sendMessage(chatId, `✅ User @${pending.uname} added for ${months} month(s).`);
 }
 
 if (data === "remove_user") {
