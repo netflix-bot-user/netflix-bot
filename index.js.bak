@@ -167,10 +167,10 @@ if (data === "remove_user") {
   if (!isAdmin) return;
   bot.sendMessage(chatId, "❌ Send user ID to remove:");
 
-  bot.once("message", (msg) => {
+  bot.once("message", async (msg) => {
     const id = msg.text.trim();
     const check = await db.query('SELECT 1 FROM authorized_users WHERE user_id = $1', [id]);
-if (check.rowCount === 0) return bot.sendMessage(chatId, "⚠️ User not found.");
+    if (check.rowCount === 0) return bot.sendMessage(chatId, "⚠️ User not found.");
 
     await db.query('DELETE FROM authorized_users WHERE user_id = $1', [id]);
     return bot.sendMessage(chatId, `🗑️ User ID ${id} removed.`);
