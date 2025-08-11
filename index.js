@@ -8,6 +8,33 @@ const fs = require("fs");
 const crypto = require("crypto");
 const db = require("./db");
 
+(async () => {
+  try {
+    await db.query(`CREATE TABLE IF NOT EXISTS authorized_users (
+      user_id TEXT PRIMARY KEY,
+      username TEXT,
+      expires TIMESTAMP
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS gmail_store (
+      user_id TEXT PRIMARY KEY,
+      email TEXT,
+      password TEXT
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS license_keys (
+      key_text TEXT PRIMARY KEY,
+      duration_months INT,
+      expires TIMESTAMP,
+      used BOOLEAN DEFAULT false
+    )`);
+
+    console.log("✅ Tables ensured");
+  } catch (err) {
+    console.error("❌ Table creation failed:", err);
+  }
+})();
+
 const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
 let pendingUserAdd = {};
 
