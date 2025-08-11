@@ -16,7 +16,13 @@ let pendingUserAdd = {};
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-const isAuthorized = (id) => authStore.authorized[id] && new Date(authStore.authorized[id].expires) > new Date();
+const isAuthorized = async (id) => {
+  const res = await db.query(
+    'SELECT 1 FROM authorized_users WHERE user_id = $1 AND expires > NOW()',
+    [id]
+  );
+  return res.rowCount > 0;
+};
 
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
@@ -25,9 +31,10 @@ bot.onText(/\/start/, (msg) => {
   const isAdmin = ADMIN_IDS.includes(userId);
 
   const buttons = [[
-    { text: "🔐 Sign-in Code", callback_data: "signin" },
-    { text: "🏠 Household Access", callback_data: "household" }
-  , { text: "🔁 Password Reset Link", callback_data: "resetpass" }]];
+  { text: "🔐 Sign-in Code", callback_data: "signin" },
+  { text: "🏠 Household Access", callback_data: "household" },
+  { text: "🔁 Password Reset Link", callback_data: "resetpass" }
+]];
 
   if (isAdmin) {
     buttons.push([
@@ -162,7 +169,8 @@ if (data === "remove_user") {
 
   bot.once("message", (msg) => {
     const id = msg.text.trim();
-    if (!authStore.authorized[id]) return bot.sendMessage(chatId, "⚠️ User not found.");
+    const check = await db.query('SELECT 1 FROM authorized_users WHERE user_id = $1', [id]);
+if (check.rowCount === 0) return bot.sendMessage(chatId, "⚠️ User not found.");
 
     await db.query('DELETE FROM authorized_users WHERE user_id = $1', [id]);
     return bot.sendMessage(chatId, `🗑️ User ID ${id} removed.`);
@@ -449,7 +457,7 @@ if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.
   }
 });
 
-bot.on("message", (msg) => {
+bot.on("message", async (msg) => {
   const userId = msg.from.id.toString();
   const isAdmin = ADMIN_IDS.includes(userId);
   const text = msg.text;
