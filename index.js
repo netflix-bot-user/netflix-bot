@@ -1,54 +1,151 @@
-// ✅ Netflix Bot with Licensing System + Gmail + Fixes
-
+// ✅ Netflix Bot with PostgreSQL Storage + Full Commands + JSON Migration
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const Imap = require("imap");
 const { simpleParser } = require("mailparser");
 const fs = require("fs");
 const crypto = require("crypto");
-
+const quotedPrintable = require("quoted-printable");
 const { Pool } = require("pg");
+
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
+// In-memory pending maps for flows that require multi-step interaction
+const pendingUserAdd = {};   // adminId -> { id, uname }
+const pendingAdminActions = {}; // to keep simple contexts if needed
+
+// Initialize DB (tables) and migrate JSON if present
 (async () => {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS authorized_users (
-      user_id TEXT PRIMARY KEY,
-      username TEXT,
-      expires TIMESTAMP
-    )
-  `);
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS license_keys (
-      key TEXT PRIMARY KEY,
-      duration INT,
-      expires TIMESTAMP,
-      used BOOLEAN DEFAULT false
-    )
-  `);
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS authorized_users (
+        user_id TEXT PRIMARY KEY,
+        username TEXT,
+        expires TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS license_keys (
+        key TEXT PRIMARY KEY,
+        duration INT,
+        expires TIMESTAMP,
+        used BOOLEAN DEFAULT false
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS gmail_store (
+        user_id TEXT PRIMARY KEY,
+        email TEXT,
+        password TEXT
+      )
+    `);
+
+    // Migration from old JSON files if they exist
+    try {
+      if (fs.existsSync("auth-store.json")) {
+        const authData = JSON.parse(fs.readFileSync("auth-store.json", "utf-8"));
+
+        if (authData.authorized) {
+          for (const [id, u] of Object.entries(authData.authorized)) {
+            await db.query(
+              `INSERT INTO authorized_users (user_id, username, expires)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (user_id) DO NOTHING`,
+              [id, u.username, u.expires]
+            );
+          }
+        }
+
+        if (authData.keys) {
+          for (const [key, k] of Object.entries(authData.keys)) {
+            await db.query(
+              `INSERT INTO license_keys (key, duration, expires, used)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (key) DO NOTHING`,
+              [key, k.duration, k.expires, k.used]
+            );
+          }
+        }
+        console.log("✅ Migrated auth-store.json to PostgreSQL");
+      }
+
+      if (fs.existsSync("gmail-store.json")) {
+        const gmailData = JSON.parse(fs.readFileSync("gmail-store.json", "utf-8"));
+        for (const [id, g] of Object.entries(gmailData)) {
+          await db.query(
+            `INSERT INTO gmail_store (user_id, email, password)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id) DO NOTHING`,
+            [id, g.email, g.password]
+          );
+        }
+        console.log("✅ Migrated gmail-store.json to PostgreSQL");
+      }
+    } catch (mErr) {
+      console.error("❌ Migration error:", mErr.message);
+    }
+
+    console.log("✅ DB ready");
+  } catch (err) {
+    console.error("DB initialization error:", err);
+    process.exit(1);
+  }
 })();
 
 const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
-const GMAIL_FILE = "gmail-store.json";
-const AUTH_FILE = "auth-store.json";
-
-let gmailStore = {};
-let authStore = { authorized: {}, keys: {} };
-let pendingUserAdd = {};
-
-// Load Gmail and Auth stores
-try { gmailStore = JSON.parse(fs.readFileSync(GMAIL_FILE, "utf-8")); } catch {}
-try { authStore = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8")); } catch {}
-
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-const saveAuth = () => fs.writeFileSync(AUTH_FILE, JSON.stringify(authStore, null, 2));
-const isAuthorized = (id) => authStore.authorized[id] && new Date(authStore.authorized[id].expires) > new Date();
+// Helpers
+const isAuthorized = async (id) => {
+  try {
+    const res = await db.query(
+      `SELECT 1 FROM authorized_users WHERE user_id = $1 AND expires > NOW()`,
+      [id]
+    );
+    return res.rows.length > 0;
+  } catch (e) {
+    console.error("isAuthorized error:", e.message);
+    return false;
+  }
+};
 
-bot.onText(/\/start/, (msg) => {
+const getGmail = async (userId) => {
+  try {
+    let res = await db.query(`SELECT * FROM gmail_store WHERE user_id = $1`, [userId]);
+    if (res.rows.length > 0) return res.rows[0];
+
+    // fallback: find first admin gmail
+    for (let adminId of ADMIN_IDS) {
+      res = await db.query(`SELECT * FROM gmail_store WHERE user_id = $1`, [adminId]);
+      if (res.rows.length > 0) return res.rows[0];
+    }
+    return null;
+  } catch (e) {
+    console.error("getGmail error:", e.message);
+    return null;
+  }
+};
+
+const saveAuthorizedUser = async (userId, username, expiresISO) => {
+  await db.query(
+    `INSERT INTO authorized_users (user_id, username, expires)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username, expires = EXCLUDED.expires`,
+    [userId, username, expiresISO]
+  );
+};
+
+const deleteAuthorizedUser = async (userId) => {
+  await db.query(`DELETE FROM authorized_users WHERE user_id = $1`, [userId]);
+};
+
+// Start command
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const username = msg.from.username || msg.from.first_name;
@@ -56,8 +153,9 @@ bot.onText(/\/start/, (msg) => {
 
   const buttons = [[
     { text: "🔐 Sign-in Code", callback_data: "signin" },
-    { text: "🏠 Household Access", callback_data: "household" }
-  , { text: "🔁 Password Reset Link", callback_data: "resetpass" }]];
+    { text: "🏠 Household Access", callback_data: "household" },
+    { text: "🔁 Password Reset Link", callback_data: "resetpass" }
+  ]];
 
   if (isAdmin) {
     buttons.push([
@@ -74,366 +172,413 @@ bot.onText(/\/start/, (msg) => {
   }
 
   bot.sendMessage(chatId, `Hello @${username}!\nChoose what you want to do:`, {
-    reply_markup: {
-      remove_keyboard: true,
-      inline_keyboard: buttons
-    }
+    reply_markup: { inline_keyboard: buttons }
   });
 });
 
-bot.on("callback_query", async (query) => {
-  const chatId = query.message.chat.id;
-  const userId = query.from.id.toString();
-  const username = query.from.username || query.from.first_name;
-  const data = query.data;
-  const isAdmin = ADMIN_IDS.includes(userId);
-
-  if (!isAdmin && ["signin", "household"].includes(data)) {
-    if (!isAuthorized(userId)) {
-      return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
-    }
-  }
-
-  if (data === "genkey") {
-    return bot.sendMessage(chatId, "Select key duration:", {
-      reply_markup: {
-        inline_keyboard: [[
-          { text: "1 Month", callback_data: "key_1" },
-          { text: "3 Months", callback_data: "key_3" },
-          { text: "6 Months", callback_data: "key_6" },
-          { text: "12 Months", callback_data: "key_12" }
-        ]]
-      }
-    });
-  }
-
-  if (data.startsWith("key_")) {
-    const months = parseInt(data.split("_")[1]);
-    const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-    const expiry = new Date();
-    expiry.setMonth(expiry.getMonth() + months);
-
-    authStore.keys[key] = {
-      duration: months,
-      expires: expiry.toISOString(),
-      used: false
-    };
-    saveAuth();
-    return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} months`);
-  }
-
-  if (data === "userlist") {
-  const entries = Object.entries(authStore.authorized);
-  const list = entries.length
-    ? entries.map(([id, u]) => `👤 @${u.username || "unknown"} (ID: ${id})\n⏳ Expires: ${u.expires}`).join("\n\n")
-    : "👥 No authorized users.";
-
-  return bot.sendMessage(chatId, `📋 Authorized Users:\n\n${list}`, {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "➕ Add User", callback_data: "add_user" },
-          { text: "➖ Remove User", callback_data: "remove_user" }
-        ]
-      ]
-    }
-  });
-}
-if (data === "add_user") {
-  if (!isAdmin) return;
-  bot.sendMessage(chatId, "📩 Send user ID and username like this:\n`123456789 username`", { parse_mode: "Markdown" });
-
-  bot.once("message", (msg) => {
-    const parts = msg.text.trim().split(" ");
-    if (parts.length < 2) return bot.sendMessage(chatId, "⚠️ Invalid format.");
-
-    const [id, uname] = parts;
-    pendingUserAdd[userId] = { id, uname };
-    bot.sendMessage(chatId, "⏳ Select access duration:", {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "1 Month", callback_data: "confirm_useradd_1" },
-            { text: "3 Months", callback_data: "confirm_useradd_3" }
-          ],
-          [
-            { text: "6 Months", callback_data: "confirm_useradd_6" },
-            { text: "12 Months", callback_data: "confirm_useradd_12" }
-          ]
-        ]
-      }
-    });
-  });
-}
-
-if (data.startsWith("confirm_useradd_")) {
-  if (!isAdmin) return;
-  const months = parseInt(data.split("_")[2]);
-  const pending = pendingUserAdd[userId];
-  if (!pending) return bot.sendMessage(chatId, "⚠️ No pending user info. Please start again.");
-
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  authStore.authorized[pending.id] = {
-    username: pending.uname,
-    expires: expiry.toISOString()
-  };
-  saveAuth();
-  delete pendingUserAdd[userId];
-  return bot.sendMessage(chatId, `✅ User @${pending.uname} added for ${months} month(s).`);
-}
-
-if (data === "remove_user") {
-  if (!isAdmin) return;
-  bot.sendMessage(chatId, "❌ Send user ID to remove:");
-
-  bot.once("message", (msg) => {
-    const id = msg.text.trim();
-    if (!authStore.authorized[id]) return bot.sendMessage(chatId, "⚠️ User not found.");
-
-    delete authStore.authorized[id];
-    saveAuth();
-    return bot.sendMessage(chatId, `🗑️ User ID ${id} removed.`);
-  });
-}
-
-  if (data === "redeem") {
-    bot.sendMessage(chatId, "🔑 Please send your license key:");
-    bot.once("message", (msg) => {
-      const key = msg.text.trim();
-      if (!authStore.keys[key]) return bot.sendMessage(chatId, "❌ Invalid key.");
-      if (authStore.keys[key].used) return bot.sendMessage(chatId, "⚠️ This key has already been used.");
-
-      const { duration, expires } = authStore.keys[key];
-      authStore.authorized[userId] = { username, expires };
-      authStore.keys[key].used = true;
-      saveAuth();
-      return bot.sendMessage(chatId, `✅ Key redeemed successfully!\nValid for: ${duration} months\nExpires on: ${expires}`);
-    });
-  }
-
-  if (data === "setgmail") {
-    if (!isAdmin) return;
-    return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\nyouremail@gmail.com yourpassword");
-  }
-
-  if (data === "mygmail") {
-    if (!isAdmin) return;
-    const info = gmailStore[userId];
-    if (!info) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
-    return bot.sendMessage(chatId, `📧 Your saved Gmail: ${info.email}`);
-  }
-
-  if (data === "deletegmail") {
-    if (!isAdmin) return;
-    if (gmailStore[userId]) {
-      delete gmailStore[userId];
-      fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-      return bot.sendMessage(chatId, "🗑️ Gmail deleted.");
-    } else {
-      return bot.sendMessage(chatId, "⚠️ No Gmail to delete.");
-    }
-  }
-
-    if (data === "resetpass") {
-    let info = gmailStore[userId];
-    if (!info) {
-      const adminGmail = Object.entries(gmailStore).find(([id]) => ADMIN_IDS.includes(id));
-      if (adminGmail) info = adminGmail[1];
-    }
-    if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
-
-    const { email, password } = info;
-    bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
-
-    const imap = new Imap({
-      user: email,
-      password,
-      host: "imap.gmail.com",
-      port: 993,
-      tls: true,
-      tlsOptions: { rejectUnauthorized: false },
-    });
-
-    imap.once("ready", function () {
-      imap.openBox("INBOX", false, function (err, box) {
-        if (err) {
-          bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
-          imap.end();
-          return;
-        }
-
-        const searchCriteria = [
-          ["FROM", "Netflix"],
-          ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
-          ["SUBJECT", "Reset"]
-        ];
-        const fetchOptions = { bodies: "", markSeen: true };
-
-        imap.search(searchCriteria, function (err, results) {
-          if (err || results.length === 0) {
-            bot.sendMessage(chatId, "❌ No recent reset email found.");
-            imap.end();
-            return;
-          }
-
-          const latest = results[results.length - 1];
-          const f = imap.fetch(latest, fetchOptions);
-
-          f.on("message", function (msgFetch) {
-            let rawEmail = "";
-            msgFetch.on("body", function (stream) {
-              stream.on("data", chunk => rawEmail += chunk.toString("utf8"));
-              stream.on("end", function () {
-                const decoded = require("quoted-printable").decode(rawEmail).toString("utf8");
-                const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
-                const resetLink = allLinks.find(link => link.toLowerCase().includes("password"));
-
-                if (resetLink) {
-                  bot.sendMessage(chatId, `Hi @${username},\n🔁 Netflix Password Reset Link:\n${resetLink}`);
-                } else {
-                  bot.sendMessage(chatId, "❌ No password reset link found.");
-                }
-                imap.end();
-              });
-            });
-          });
-
-          f.once("error", err => bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`));
-        });
-      });
-    });
-
-    imap.once("error", function (err) {
-      bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
-    });
-
-    imap.connect();
-  }
-
-
-  if (data === "signin" || data === "household") {
-    let info = gmailStore[userId];
-    if (!info) {
-      const adminGmail = Object.entries(gmailStore).find(([id]) => ADMIN_IDS.includes(id));
-      if (adminGmail) info = adminGmail[1];
-    }
-    if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
-
-    const { email, password } = info;
-    bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
-
-    const imap = new Imap({
-      user: email,
-      password,
-      host: "imap.gmail.com",
-      port: 993,
-      tls: true,
-      tlsOptions: { rejectUnauthorized: false },
-    });
-
-    imap.once("ready", function () {
-      imap.openBox("INBOX", false, function (err, box) {
-        if (err) {
-          bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
-          imap.end();
-          return;
-        }
-
-        const searchCriteria = [["FROM", "Netflix"], ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)]];
-        const fetchOptions = { bodies: ["HEADER", "TEXT"], struct: true };
-
-        imap.search(searchCriteria, function (err, results) {
-          if (err || results.length === 0) {
-            bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
-            imap.end();
-            return;
-          }
-
-          const latest = results[results.length - 1];
-          const f = imap.fetch(latest, fetchOptions);
-          let responded = false;
-
-          f.on("message", function (msgFetch) {
-            msgFetch.on("body", function (stream) {
-              simpleParser(stream, async (err, parsed) => {
-                if (err) {
-                  bot.sendMessage(chatId, "❌ Error reading email.");
-                  responded = true;
-                  imap.end();
-                  return;
-                }
-
-                const body = parsed.text || "";
-
-                if (data === "signin" && !responded && body.includes("sign in to Netflix")) {
-                  const codeMatch = body.match(/\b\d{4}\b/);
-                  if (codeMatch) {
-                    responded = true;
-                    bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: ${codeMatch[0]}`);
-                  }
-                }
-
-                if (data === "household" && !responded) {
-                  const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
-                  if (linkMatch) {
-                    responded = true;
-                    return bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
-                  }
-
-                 // const codeMatch = body.match(/\b\d{4}\b/);
-                 // if (!responded && codeMatch) {
-                  //  responded = true;
-                   // return bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Household OTP: ${codeMatch[0]}`);
-                 // }
-
-                  if (!responded && parsed.html && parsed.html.includes("Get Code")) {
-                    const buttonMatch = parsed.html.match(/<a[^>]*href=["']([^"']+)["'][^>]*>\s*Get Code\s*<\/a>/i);
-                    if (buttonMatch && buttonMatch[1]) {
-                      responded = true;
-                      return bot.sendMessage(chatId, `Hi @${username},\n🔗 Get Code link:\n${buttonMatch[1]}`);
-                    }
-                  }
-                }
-
-                if (!responded) {
-                  responded = true;
-                  bot.sendMessage(chatId, "❌ No valid Netflix info found.");
-                }
-                imap.end();
-              });
-            });
-          });
-
-          f.once("error", function (err) {
-            bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
-            imap.end();
-          });
-
-          f.once("end", function () {
-            console.log("✅ IMAP fetch complete.");
-          });
-        });
-      });
-    });
-
-    imap.once("error", function (err) {
-      bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
-    });
-
-    imap.connect();
-  }
-});
-
-bot.on("message", (msg) => {
+// Gmail Save via plain message (admin only)
+bot.on("message", async (msg) => {
+  // ignore messages that are commands (start handled above) or not text
+  if (!msg.text) return;
   const userId = msg.from.id.toString();
   const isAdmin = ADMIN_IDS.includes(userId);
-  const text = msg.text;
+  const text = msg.text.trim();
 
-  if (text.includes("@gmail.com") && text.split(" ").length === 2 && isAdmin) {
+  // If admin sent "email password" to store Gmail
+  if (isAdmin && text.includes("@gmail.com") && text.split(" ").length === 2) {
     const [email, password] = text.split(" ");
-    gmailStore[userId] = { email, password };
-    fs.writeFileSync(GMAIL_FILE, JSON.stringify(gmailStore, null, 2));
-    return bot.sendMessage(msg.chat.id, `✅ Gmail set successfully: ${email}`);
+    try {
+      await db.query(
+        `INSERT INTO gmail_store (user_id, email, password)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email, password = EXCLUDED.password`,
+        [userId, email, password]
+      );
+      return bot.sendMessage(msg.chat.id, `✅ Gmail set successfully: ${email}`);
+    } catch (e) {
+      console.error("set gmail error:", e.message);
+      return bot.sendMessage(msg.chat.id, `❌ Error saving Gmail.`);
+    }
+  }
+
+  // Other messages are ignored here to avoid interfering with callback-based flows.
+});
+
+// Callback handler (mainly all button actions)
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const fromId = query.from.id.toString();
+  const username = query.from.username || query.from.first_name;
+  const data = query.data;
+  const isAdmin = ADMIN_IDS.includes(fromId);
+
+  try {
+    // --- GENERATE KEY (admin) ---
+    if (data === "genkey") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      return bot.sendMessage(chatId, "Select key duration:", {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "1 Month", callback_data: "key_1" },
+            { text: "3 Months", callback_data: "key_3" },
+            { text: "6 Months", callback_data: "key_6" },
+            { text: "12 Months", callback_data: "key_12" }
+          ]]
+        }
+      });
+    }
+
+    if (data.startsWith("key_")) {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      const months = parseInt(data.split("_")[1], 10);
+      const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+      const expiry = new Date();
+      expiry.setMonth(expiry.getMonth() + months);
+
+      await db.query(
+        `INSERT INTO license_keys (key, duration, expires, used)
+         VALUES ($1, $2, $3, $4)`,
+        [key, months, expiry.toISOString(), false]
+      );
+
+      return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)`);
+    }
+
+    // --- USERLIST (admin) ---
+    if (data === "userlist") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      const res = await db.query(`SELECT user_id, username, expires FROM authorized_users ORDER BY expires DESC`);
+      if (res.rows.length === 0) {
+        return bot.sendMessage(chatId, "👥 No authorized users.");
+      }
+      const list = res.rows.map(r => `👤 @${r.username || "unknown"} (ID: ${r.user_id})\n⏳ Expires: ${new Date(r.expires).toISOString()}`).join("\n\n");
+      return bot.sendMessage(chatId, `📋 Authorized Users:\n\n${list}`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "➕ Add User", callback_data: "add_user" },
+              { text: "➖ Remove User", callback_data: "remove_user" }
+            ]
+          ]
+        }
+      });
+    }
+
+    // --- ADD USER (admin flow) ---
+    if (data === "add_user") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      await bot.sendMessage(chatId, "📩 Send user ID and username like this:\n`123456789 username`", { parse_mode: "Markdown" });
+
+      // wait for next message
+      bot.once("message", async (msg) => {
+        try {
+          if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
+          const parts = msg.text.trim().split(" ");
+          if (parts.length < 2) return bot.sendMessage(chatId, "⚠️ Invalid format. Use: `123456789 username`", { parse_mode: "Markdown" });
+
+          const [id, uname] = parts;
+          pendingUserAdd[fromId] = { id, uname };
+          return bot.sendMessage(chatId, "⏳ Select access duration:", {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "1 Month", callback_data: "confirm_useradd_1" },
+                  { text: "3 Months", callback_data: "confirm_useradd_3" }
+                ],
+                [
+                  { text: "6 Months", callback_data: "confirm_useradd_6" },
+                  { text: "12 Months", callback_data: "confirm_useradd_12" }
+                ]
+              ]
+            }
+          });
+        } catch (e) {
+          console.error("add_user message handler error:", e.message);
+          return bot.sendMessage(chatId, "⚠️ Error during add user flow.");
+        }
+      });
+      return;
+    }
+
+    if (data.startsWith("confirm_useradd_")) {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      const months = parseInt(data.split("_")[2], 10);
+      const pending = pendingUserAdd[fromId];
+      if (!pending) return bot.sendMessage(chatId, "⚠️ No pending user info. Please start again with Add User.");
+
+      const expiry = new Date();
+      expiry.setMonth(expiry.getMonth() + months);
+
+      await saveAuthorizedUser(pending.id, pending.uname, expiry.toISOString());
+      delete pendingUserAdd[fromId];
+      return bot.sendMessage(chatId, `✅ User @${pending.uname} added for ${months} month(s).`);
+    }
+
+    // --- REMOVE USER (admin flow) ---
+    if (data === "remove_user") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      await bot.sendMessage(chatId, "❌ Send user ID to remove:");
+
+      bot.once("message", async (msg) => {
+        try {
+          if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
+          const id = msg.text.trim();
+          const res = await db.query(`SELECT 1 FROM authorized_users WHERE user_id = $1`, [id]);
+          if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ User not found.");
+          await deleteAuthorizedUser(id);
+          return bot.sendMessage(chatId, `🗑️ User ID ${id} removed.`);
+        } catch (e) {
+          console.error("remove_user handler error:", e.message);
+          return bot.sendMessage(chatId, "⚠️ Error removing user.");
+        }
+      });
+      return;
+    }
+
+    // --- REDEEM KEY (user) ---
+    if (data === "redeem") {
+      await bot.sendMessage(chatId, "🔑 Please send your license key:");
+      bot.once("message", async (msg) => {
+        try {
+          if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
+          const key = msg.text.trim();
+          const res = await db.query(`SELECT * FROM license_keys WHERE key = $1`, [key]);
+          if (res.rows.length === 0) return bot.sendMessage(chatId, "❌ Invalid key.");
+          const row = res.rows[0];
+          if (row.used) return bot.sendMessage(chatId, "⚠️ This key has already been used.");
+
+          // Mark used and give authorized user
+          await db.query(`UPDATE license_keys SET used = true WHERE key = $1`, [key]);
+          // We'll set authorized_users with username and expires from the key
+          await saveAuthorizedUser(fromId, username, row.expires);
+          return bot.sendMessage(chatId, `✅ Key redeemed successfully!\nValid for: ${row.duration} month(s)\nExpires on: ${row.expires}`);
+        } catch (e) {
+          console.error("redeem handler error:", e.message);
+          return bot.sendMessage(chatId, "❌ Error processing key.");
+        }
+      });
+      return;
+    }
+
+    // --- SET GMAIL (admin) ---
+    if (data === "setgmail") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      return bot.sendMessage(chatId, "📧 Send Gmail and App Password in this format:\nyouremail@gmail.com yourpassword", { parse_mode: "Markdown" });
+    }
+
+    // --- MY GMAIL ---
+    if (data === "mygmail") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      const res = await db.query(`SELECT email FROM gmail_store WHERE user_id = $1`, [fromId]);
+      if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ No Gmail is set.");
+      return bot.sendMessage(chatId, `📧 Your saved Gmail: ${res.rows[0].email}`);
+    }
+
+    // --- DELETE GMAIL ---
+    if (data === "deletegmail") {
+      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+      const res = await db.query(`SELECT 1 FROM gmail_store WHERE user_id = $1`, [fromId]);
+      if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ No Gmail to delete.");
+      await db.query(`DELETE FROM gmail_store WHERE user_id = $1`, [fromId]);
+      return bot.sendMessage(chatId, "🗑️ Gmail deleted.");
+    }
+
+    // --- RESET PASS (both user and admin can press) ---
+    if (data === "resetpass") {
+      const info = await getGmail(fromId);
+      if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+      const { email, password } = info;
+      bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
+
+      const imap = new Imap({
+        user: email,
+        password,
+        host: "imap.gmail.com",
+        port: 993,
+        tls: true,
+        tlsOptions: { rejectUnauthorized: false },
+      });
+
+      imap.once("ready", function () {
+        imap.openBox("INBOX", false, function (err, box) {
+          if (err) {
+            bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
+            imap.end();
+            return;
+          }
+
+          const searchCriteria = [
+            ["FROM", "Netflix"],
+            ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
+            ["SUBJECT", "Reset"]
+          ];
+          const fetchOptions = { bodies: "", markSeen: true };
+
+          imap.search(searchCriteria, function (err, results) {
+            if (err || results.length === 0) {
+              bot.sendMessage(chatId, "❌ No recent reset email found.");
+              imap.end();
+              return;
+            }
+
+            const latest = results[results.length - 1];
+            const f = imap.fetch(latest, fetchOptions);
+
+            f.on("message", function (msgFetch) {
+              let rawEmail = "";
+              msgFetch.on("body", function (stream) {
+                stream.on("data", chunk => rawEmail += chunk.toString("utf8"));
+                stream.on("end", function () {
+                  try {
+                    const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
+                    const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
+                    const resetLink = allLinks.find(link => link.toLowerCase().includes("password"));
+
+                    if (resetLink) {
+                      bot.sendMessage(chatId, `Hi @${username},\n🔁 Netflix Password Reset Link:\n${resetLink}`);
+                    } else {
+                      bot.sendMessage(chatId, "❌ No password reset link found.");
+                    }
+                  } catch (e) {
+                    console.error("resetpass parse error:", e.message);
+                    bot.sendMessage(chatId, "❌ Error reading the email.");
+                  }
+                  imap.end();
+                });
+              });
+            });
+
+            f.once("error", err => {
+              bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
+            });
+          });
+        });
+      });
+
+      imap.once("error", function (err) {
+        bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
+      });
+
+      imap.connect();
+      return;
+    }
+
+    // --- SIGNIN (OTP) & HOUSEHOLD (both look for specific content) ---
+    if (data === "signin" || data === "household") {
+      if (!isAdmin) {
+        // For signin/household, normal users must be authorized
+        const ok = await isAuthorized(fromId);
+        if (!ok) {
+          return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+        }
+      }
+
+      const info = await getGmail(fromId);
+      if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+
+      const { email, password } = info;
+      bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
+
+      const imap = new Imap({
+        user: email,
+        password,
+        host: "imap.gmail.com",
+        port: 993,
+        tls: true,
+        tlsOptions: { rejectUnauthorized: false },
+      });
+
+      imap.once("ready", function () {
+        imap.openBox("INBOX", false, function (err, box) {
+          if (err) {
+            bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
+            imap.end();
+            return;
+          }
+
+          const searchCriteria = [["FROM", "Netflix"], ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)]];
+          const fetchOptions = { bodies: ["HEADER", "TEXT"], struct: true };
+
+          imap.search(searchCriteria, function (err, results) {
+            if (err || results.length === 0) {
+              bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
+              imap.end();
+              return;
+            }
+
+            const latest = results[results.length - 1];
+            const f = imap.fetch(latest, fetchOptions);
+            let responded = false;
+
+            f.on("message", function (msgFetch) {
+              msgFetch.on("body", function (stream) {
+                simpleParser(stream, async (err, parsed) => {
+                  if (err) {
+                    bot.sendMessage(chatId, "❌ Error reading email.");
+                    responded = true;
+                    imap.end();
+                    return;
+                  }
+
+                  const body = parsed.text || "";
+
+                  if (data === "signin" && !responded && body.toLowerCase().includes("sign in to netflix")) {
+                    const codeMatch = body.match(/\b\d{4}\b/);
+                    if (codeMatch) {
+                      responded = true;
+                      bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: ${codeMatch[0]}`);
+                    }
+                  }
+
+                  if (data === "household" && !responded) {
+                    const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
+                    if (linkMatch) {
+                      responded = true;
+                      return bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
+                    }
+
+                    if (!responded && parsed.html && parsed.html.includes("Get Code")) {
+                      const buttonMatch = parsed.html.match(/<a[^>]*href=["']([^"']+)["'][^>]*>\s*Get Code\s*<\/a>/i);
+                      if (buttonMatch && buttonMatch[1]) {
+                        responded = true;
+                        return bot.sendMessage(chatId, `Hi @${username},\n🔗 Get Code link:\n${buttonMatch[1]}`);
+                      }
+                    }
+                  }
+
+                  if (!responded) {
+                    responded = true;
+                    bot.sendMessage(chatId, "❌ No valid Netflix info found.");
+                  }
+                  imap.end();
+                });
+              });
+            });
+
+            f.once("error", function (err) {
+              bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
+              imap.end();
+            });
+
+            f.once("end", function () {
+              // no-op
+            });
+          });
+        });
+      });
+
+      imap.once("error", function (err) {
+        bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
+      });
+
+      imap.connect();
+      return;
+    }
+
+    // Unknown callback: ignore or ack
+    return;
+  } catch (err) {
+    console.error("callback_query handler error:", err.message);
+    try { await bot.sendMessage(chatId, "⚠️ Error processing action."); } catch (_) {}
   }
 });
