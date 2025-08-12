@@ -1,0 +1,444 @@
+originalCookieHeader: undefined,
+      _disableCookies: true,
+      _jar: undefined,
+      port: 443,
+      host: 'api.telegram.org',
+      body: 'parse_mode=Markdown&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%E2%9C%8F%EF%B8%8F%20Edit%20mikeUei%40LuxuryGHotel.com%22%2C%22callback_data%22%3A%22edit_acc_3%22%7D%5D%2C%5B%7B%22text%22%3A%22%E2%9E%95%20Add%20Account%22%2C%22callback_data%22%3A%22add_account%22%7D%2C%7B%22text%22%3A%22%E2%9E%96%20Remove%20Account%22%2C%22callback_data%22%3A%22remove_account%22%7D%5D%5D%7D&chat_id=6586288230&text=%F0%9F%93%82%20%2AAll%20Accounts%2A%0A%0A%F0%9F%93%A7%20mikeUei%40LuxuryGHotel.com%0A%E2%8F%B3%20Expiry%3A%2011%2F12%2F2025%0A%F0%9F%91%A4%20Buyer%3A%20%40Nfx_Tfx%20%28ID%3A%205976778003%29%0A%0A',
+      path: '/bot8067114062:AAGzczvgYO48eUTsE8C1I-QAxeC__eiV5Fk/sendMessage',
+      httpModule: {
+        Agent: [Function: Agent],
+        globalAgent: Agent {
+          _events: [Object: null prototype] {
+            free: [Function (anonymous)],
+            newListener: [Function: maybeEnableKeylog]
+          },
+          _eventsCount: 2,
+          _maxListeners: undefined,
+          defaultPort: 443,
+          protocol: 'https:',
+          options: [Object: null prototype] {
+            keepAlive: true,
+            scheduling: 'lifo',
+            timeout: 5000,
+            noDelay: true,
+            path: null
+          },
+          requests: [Object: null prototype] {},
+          sockets: [Object: null prototype] {},
+          freeSockets: [Object: null prototype] {},
+          keepAliveMsecs: 1000,
+          keepAlive: true,
+          maxSockets: Infinity,
+          maxFreeSockets: 256,
+          scheduling: 'lifo',
+          maxTotalSockets: Infinity,
+          totalSocketCount: 0,
+          maxCachedSessions: 100,
+          _sessionCache: { map: {}, list: [] },
+          [Symbol(shapeMode)]: false,
+          [Symbol(kCapture)]: false
+        },
+        Server: [Function: Server],
+        createServer: [Function: createServer],
+        get: [Function: get],
+        request: [Function: request]
+      },
+      agentClass: [Function: Agent],
+      agentOptions: { keepAlive: true },
+      agent: Agent {
+        _events: [Object: null prototype] {
+          free: [Function (anonymous)],
+          newListener: [Function: maybeEnableKeylog]
+        },
+        _eventsCount: 2,
+        _maxListeners: undefined,
+        defaultPort: 443,
+        protocol: 'https:',
+        options: [Object: null prototype] {
+          keepAlive: true,
+          noDelay: true,
+          path: null
+        },
+        requests: [Object: null prototype] {},
+        sockets: [Object: null prototype] {
+          'api.telegram.org:443:::::::::::::::::::::': [ [TLSSocket], [TLSSocket], [TLSSocket] ]
+        },
+        freeSockets: [Object: null prototype] {
+          'api.telegram.org:443:::::::::::::::::::::': [ [TLSSocket], [TLSSocket] ]
+        },
+        keepAliveMsecs: 1000,
+        keepAlive: true,
+        maxSockets: Infinity,
+        maxFreeSockets: 256,
+        scheduling: 'lifo',
+        maxTotalSockets: Infinity,
+        totalSocketCount: 5,
+        maxCachedSessions: 100,
+        _sessionCache: {
+          map: {
+            'api.telegram.org:443:::::::::::::::::::::': [Buffer [Uint8Array]]
+          },
+          list: [ 'api.telegram.org:443:::::::::::::::::::::' ]
+        },
+        [Symbol(shapeMode)]: false,
+        [Symbol(kCapture)]: false
+      },
+      _started: true,
+      href: 'https://api.telegram.org/bot8067114062:AAGzczvgYO48eUTsE8C1I-QAxeC__eiV5Fk/sendMessage',
+      req: ClientRequest {
+        _events: [Object: null prototype] {
+          response: [Function: bound ],
+          error: [Function: bound ],
+          drain: [Function (anonymous)],
+          socket: [Function (anonymous)],
+          finish: [Function: requestOnFinish]
+        },
+        _eventsCount: 5,
+        _maxListeners: undefined,
+        outputData: [],
+        outputSize: 0,
+        writable: true,
+        destroyed: true,
+        _last: false,
+        chunkedEncoding: false,
+        shouldKeepAlive: true,
+        maxRequestsOnConnectionReached: false,
+        _defaultKeepAlive: true,
+        useChunkedEncodingByDefault: true,
+        sendDate: false,
+        _removedConnection: false,
+        _removedContLen: false,
+        _removedTE: false,
+        strictContentLength: false,
+        _contentLength: 617,
+        _hasBody: true,
+        _trailer: '',
+        finished: true,
+        _headerSent: true,
+        _closed: true,
+        _header: 'POST /bot8067114062:AAGzczvgYO48eUTsE8C1I-QAxeC__eiV5Fk/sendMessage HTTP/1.1\r\n' +
+          'host: api.telegram.org\r\n' +
+          'content-type: application/x-www-form-urlencoded\r\n' +
+          'content-length: 617\r\n' +
+          'Connection: keep-alive\r\n' +
+          '\r\n',
+        _keepAliveTimeout: 0,
+        _onPendingData: [Function: nop],
+        agent: Agent {
+          _events: [Object: null prototype] {
+            free: [Function (anonymous)],
+            newListener: [Function: maybeEnableKeylog]
+          },
+          _eventsCount: 2,
+          _maxListeners: undefined,
+          defaultPort: 443,
+          protocol: 'https:',
+          options: [Object: null prototype] {
+            keepAlive: true,
+            noDelay: true,
+            path: null
+          },
+          requests: [Object: null prototype] {},
+          sockets: [Object: null prototype] {
+            'api.telegram.org:443:::::::::::::::::::::': [Array]
+          },
+          freeSockets: [Object: null prototype] {
+            'api.telegram.org:443:::::::::::::::::::::': [Array]
+          },
+          keepAliveMsecs: 1000,
+          keepAlive: true,
+          maxSockets: Infinity,
+          maxFreeSockets: 256,
+          scheduling: 'lifo',
+          maxTotalSockets: Infinity,
+          totalSocketCount: 5,
+          maxCachedSessions: 100,
+          _sessionCache: { map: [Object], list: [Array] },
+          [Symbol(shapeMode)]: false,
+          [Symbol(kCapture)]: false
+        },
+        socketPath: undefined,
+        method: 'POST',
+        maxHeaderSize: undefined,
+        insecureHTTPParser: undefined,
+        joinDuplicateHeaders: undefined,
+        path: '/bot8067114062:AAGzczvgYO48eUTsE8C1I-QAxeC__eiV5Fk/sendMessage',
+        _ended: true,
+        res: [Circular *3],
+        aborted: false,
+        timeoutCb: null,
+        upgradeOrConnect: false,
+        parser: null,
+        maxHeadersCount: null,
+        reusedSocket: false,
+        host: 'api.telegram.org',
+        protocol: 'https:',
+        [Symbol(shapeMode)]: false,
+        [Symbol(kCapture)]: false,
+        [Symbol(kBytesWritten)]: 0,
+        [Symbol(kNeedDrain)]: false,
+        [Symbol(corked)]: 0,
+        [Symbol(kChunkedBuffer)]: [],
+        [Symbol(kChunkedLength)]: 0,
+        [Symbol(kSocket)]: <ref *1> TLSSocket {
+          _tlsOptions: {
+            allowHalfOpen: undefined,
+            pipe: false,
+            secureContext: [SecureContext],
+            isServer: false,
+            requestCert: true,
+            rejectUnauthorized: true,
+            session: [Buffer [Uint8Array]],
+            ALPNProtocols: undefined,
+            requestOCSP: undefined,
+            enableTrace: undefined,
+            pskCallback: undefined,
+            highWaterMark: undefined,
+            onread: undefined,
+            signal: undefined
+          },
+          _secureEsta
+==> Running 'node index.js'
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`)
+✅ Migrated auth-store.json to PostgreSQL
+✅ Migrated gmail-store.json to PostgreSQL
+✅ DB ready
+/opt/render/project/src/node_modules/node-telegram-bot-api/src/telegram.js:316
+        throw new errors.TelegramError(`${data.error_code} ${data.description}`, resp);
+              ^
+TelegramError: ETELEGRAM: 400 Bad Request: can't parse entities: Can't find end of the entity starting at byte offset 90
+    at /opt/render/project/src/node_modules/node-telegram-bot-api/src/telegram.js:316:15
+    at tryCatcher (/opt/render/project/src/node_modules/bluebird/js/release/util.js:16:23)
+    at Promise._settlePromiseFromHandler (/opt/render/project/src/node_modules/bluebird/js/release/promise.js:547:31)
+    at Promise._settlePromise (/opt/render/project/src/node_modules/bluebird/js/release/promise.js:604:18)
+    at Promise._settlePromise0 (/opt/render/project/src/node_modules/bluebird/js/release/promise.js:649:10)
+    at Promise._settlePromises (/opt/render/project/src/node_modules/bluebird/js/release/promise.js:729:18)
+    at _drainQueueStep (/opt/render/project/src/node_modules/bluebird/js/release/async.js:93:12)
+    at _drainQueue (/opt/render/project/src/node_modules/bluebird/js/release/async.js:86:9)
+    at Async._drainQueues (/opt/render/project/src/node_modules/bluebird/js/release/async.js:102:5)
+    at Async.drainQueues (/opt/render/project/src/node_modules/bluebird/js/release/async.js:15:14)
+    at process.processImmediate (node:internal/timers:485:21) {
+  code: 'ETELEGRAM',
+  response: <ref *3> IncomingMessage {
+    _events: {
+      close: [ [Function (anonymous)], [Function (anonymous)] ],
+      error: [Function (anonymous)],
+      data: [Function (anonymous)],
+      end: [ [Function: responseOnEnd], [Function (anonymous)] ],
+      readable: undefined
+    },
+    _readableState: ReadableState {
+      highWaterMark: 65536,
+      buffer: [],
+      bufferIndex: 0,
+      length: 0,
+      pipes: [],
+      awaitDrainWriters: null,
+      [Symbol(kState)]: 194779004
+    },
+    _maxListeners: undefined,
+    socket: null,
+    httpVersionMajor: 1,
+    httpVersionMinor: 1,
+    httpVersion: '1.1',
+    complete: true,
+    rawHeaders: [
+      'Server',
+      'nginx/1.18.0',
+      'Date',
+      'Tue, 12 Aug 2025 18:38:38 GMT',
+      'Content-Type',
+      'application/json',
+      'Content-Length',
+      '136',
+      'Connection',
+      'keep-alive',
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload',
+      'Access-Control-Allow-Origin',
+      '*',
+      'Access-Control-Expose-Headers',
+      'Content-Length,Content-Type,Date,Server,Connection'
+    ],
+    rawTrailers: [],
+    joinDuplicateHeaders: undefined,
+    aborted: false,
+    upgrade: false,
+    url: '',
+    method: null,
+    statusCode: 400,
+    statusMessage: 'Bad Request',
+    client: <ref *1> TLSSocket {
+      _tlsOptions: {
+        allowHalfOpen: undefined,
+        pipe: false,
+        secureContext: SecureContext { context: SecureContext {} },
+        isServer: false,
+        requestCert: true,
+        rejectUnauthorized: true,
+        session: Buffer(2102) [Uint8Array] [
+           48, 130,   8,  50,   2,   1,   1,   2,   2,   3,   4,   4,
+            2,  19,   2,   4,  32, 137,  91, 200,  61, 180, 201,  68,
+          193, 203, 236, 218,  88, 118,  40,  83,  57, 159,  64,  87,
+           41, 157, 251, 116, 189, 175, 119,  73, 134,  87, 131, 241,
+          228,   4,  48,  61, 118, 137, 254,  71, 180,  58, 107, 163,
+          126,   6,  99,  51, 175, 161, 213, 202, 254,  35,  60,  93,
+          225, 185, 161, 176, 220,   9,  18, 129, 171,  70,  43, 222,
+           87,  37, 130, 216,  58, 216,  83, 166,  35,  31, 168,  50,
+          208,   7,  67, 161,
+          ... 2002 more items
+        ],
+        ALPNProtocols: undefined,
+        requestOCSP: undefined,
+        enableTrace: undefined,
+        pskCallback: undefined,
+        highWaterMark: undefined,
+        onread: undefined,
+        signal: undefined
+      },
+      _secureEstablished: true,
+      _securePending: false,
+      _newSessionPending: false,
+      _controlReleased: true,
+      secureConnecting: false,
+      _SNICallback: null,
+      servername: 'api.telegram.org',
+      alpnProtocol: false,
+      authorized: true,
+      authorizationError: null,
+      encrypted: true,
+      _events: [Object: null prototype] {
+        close: [
+          [Function: onSocketCloseDestroySSL],
+          [Function: bound onceWrapper] {
+            listener: [Function (anonymous)]
+          },
+          [Function: onClose]
+        ],
+        end: [Function: onReadableStreamEnd],
+        error: [Function: bound onceWrapper] {
+          listener: [Function: freeSocketErrorListener]
+        },
+        newListener: [Function: keylogNewListener],
+        connect: undefined,
+        secure: [Function: onConnectSecure],
+        session: [Function (anonymous)],
+        free: [Function: onFree],
+        timeout: [Function: onTimeout],
+        agentRemove: [Function: onRemove],
+        data: undefined,
+        drain: undefined
+      },
+      _eventsCount: 9,
+      connecting: false,
+      _hadError: false,
+      _parent: null,
+      _host: 'api.telegram.org',
+      _closeAfterHandlingError: false,
+      _readableState: ReadableState {
+        highWaterMark: 65536,
+        buffer: [],
+        bufferIndex: 0,
+        length: 0,
+        pipes: [],
+        awaitDrainWriters: null,
+        [Symbol(kState)]: 60303620
+      },
+      _writableState: WritableState {
+        highWaterMark: 65536,
+        length: 0,
+        corked: 0,
+        onwrite: [Function: bound onwrite],
+        writelen: 0,
+        bufferedIndex: 0,
+        pendingcb: 0,
+        [Symbol(kState)]: 17563908,
+        [Symbol(kBufferedValue)]: null,
+        [Symbol(kWriteCbValue)]: null
+      },
+      allowHalfOpen: false,
+      _maxListeners: undefined,
+      _sockname: null,
+      _pendingData: null,
+      _pendingEncoding: '',
+      server: undefined,
+      _server: null,
+      ssl: TLSWrap {
+        _parent: TCP {
+          reading: [Getter/Setter],
+          onconnection: null,
+          [Symbol(owner_symbol)]: [Circular *1]
+        },
+        _parentWrap: null,
+        _secureContext: SecureContext { context: SecureContext {} },
+        reading: true,
+        onkeylog: [Function: onkeylog],
+        onhandshakestart: [Function: noop],
+        onhandshakedone: [Function (anonymous)],
+        onocspresponse: [Function: onocspresponse],
+        onnewsession: [Function: onnewsessionclient],
+        onerror: [Function: onerror],
+        [Symbol(owner_symbol)]: [Circular *1]
+      },
+      _requestCert: true,
+      _rejectUnauthorized: true,
+      parser: null,
+      _httpMessage: null,
+      autoSelectFamilyAttemptedAddresses: [ '149.154.167.220:443' ],
+      timeout: 0,
+      [Symbol(alpncallback)]: null,
+      [Symbol(res)]: TLSWrap {
+        _parent: TCP {
+          reading: [Getter/Setter],
+          onconnection: null,
+          [Symbol(owner_symbol)]: [Circular *1]
+        },
+        _parentWrap: null,
+        _secureContext: SecureContext { context: SecureContext {} },
+        reading: true,
+        onkeylog: [Function: onkeylog],
+        onhandshakestart: [Function: noop],
+        onhandshakedone: [Function (anonymous)],
+        onocspresponse: [Function: onocspresponse],
+        onnewsession: [Function: onnewsessionclient],
+        onerror: [Function: onerror],
+        [Symbol(owner_symbol)]: [Circular *1]
+      },
+      [Symbol(verified)]: true,
+      [Symbol(pendingSession)]: null,
+      [Symbol(async_id_symbol)]: -1,
+      [Symbol(kHandle)]: TLSWrap {
+        _parent: TCP {
+          reading: [Getter/Setter],
+          onconnection: null,
+          [Symbol(owner_symbol)]: [Circular *1]
+        },
+        _parentWrap: null,
+        _secureContext: SecureContext { context: SecureContext {} },
+        reading: true,
+        onkeylog: [Function: onkeylog],
+        onhandshakestart: [Function: noop],
+        onhandshakedone: [Function (anonymous)],
+        onocspresponse: [Function: onocspresponse],
+        onnewsession: [Function: onnewsessionclient],
+        onerror: [Function: onerror],
+        [Symbol(owner_symbol)]: [Circular *1]
+      },
+      [Symbol(lastWriteQueueSize)]: 0,
+      [Symbol(timeout)]: null,
+      [Symbol(kBuffer)]: null,
+      [Symbol(kBufferCb)]: null,
+      [Symbol(kBufferGen)]: null,
+      [Symbol(shapeMode)]: true,
+      [Symbol(kCapture)]: false,
+      [Symbol(kSetNoDelay)]: false,
+      [Symbol(kSetKeepAlive)]: true,
+      [Symbol(kSetKeepAliveInitialDelay)]: 1,
+      [Symbol(kBytesRead)]: 0,
+      [Symbol(kBytesWritten)]: 0,
+      [Symbol(connect-options)]: {
+        rejectUnauthorized: true,
+        ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA',
+        checkServerIdentity: [Function: checkServerIdentity],
+        minDHSize: 1024,
+        session: Buffer(2102) [Uint8Array] [
