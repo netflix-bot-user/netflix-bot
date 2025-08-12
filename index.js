@@ -158,18 +158,22 @@ bot.onText(/\/start/, async (msg) => {
   ]];
 
   if (isAdmin) {
-    buttons.push([
-      { text: "📥 Set Gmail", callback_data: "setgmail" },
-      { text: "📧 My Gmail", callback_data: "mygmail" },
-      { text: "📤 Delete Gmail", callback_data: "deletegmail" }
-    ]);
-    buttons.push([
-      { text: "🗝️ Generate Key", callback_data: "genkey" },
-      { text: "👥 Userlist", callback_data: "userlist" }
-    ]);
-  } else {
-    buttons.push([{ text: "🔓 Redeem Key", callback_data: "redeem" }]);
-  }
+  buttons.push([
+    { text: "📥 Set Gmail", callback_data: "setgmail" },
+    { text: "📧 My Gmail", callback_data: "mygmail" },
+    { text: "📤 Delete Gmail", callback_data: "deletegmail" }
+  ]);
+  buttons.push([
+    { text: "🗝️ Generate Key", callback_data: "genkey" },
+    { text: "👥 Userlist", callback_data: "userlist" }
+  ]);
+  buttons.push([
+    { text: "📂 Accounts", callback_data: "accounts" } // <-- नया बटन यहाँ
+  ]);
+} else {
+  buttons.push([{ text: "🔓 Redeem Key", callback_data: "redeem" }]);
+  buttons.push([{ text: "📂 Accounts", callback_data: "accounts" }]); // <-- यूज़र के लिए भी
+}
 
   bot.sendMessage(chatId, `Hello @${username}!\nChoose what you want to do:`, {
     reply_markup: { inline_keyboard: buttons }
@@ -359,6 +363,63 @@ bot.on("callback_query", async (query) => {
       });
       return;
     }
+
+    // --- ACCOUNTS LIST ---
+if (data === "accounts") {
+  if (isAdmin) {
+    // Admin — सभी accounts दिखाओ (gmail_store + authorized_users join करके)
+    const res = await db.query(
+      `SELECT g.user_id, g.email, g.password, a.username AS buyer_username, a.expires
+       FROM gmail_store g
+       LEFT JOIN authorized_users a ON g.user_id = a.user_id
+       ORDER BY a.expires DESC NULLS LAST`
+    );
+
+    if (res.rows.length === 0) {
+      return bot.sendMessage(chatId, "📭 कोई भी account नहीं मिला।");
+    }
+
+    const accountsList = res.rows.map(acc => {
+      const expDate = acc.expires ? new Date(acc.expires).toLocaleDateString() : "N/A";
+      return `📧 <b>${acc.email}</b>\n🔑 Pass: ${acc.password || "N/A"}\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.user_id})`;
+    }).join("\n\n");
+
+    const inlineButtons = res.rows.map(acc => [
+      { text: `✏️ Edit (${acc.email})`, callback_data: `editacc_${acc.user_id}` }
+    ]);
+
+    // Add / Remove buttons
+    inlineButtons.push([
+      { text: "➕ Add Account", callback_data: "add_account" },
+      { text: "➖ Remove Account", callback_data: "remove_account" }
+    ]);
+
+    return bot.sendMessage(chatId, `📜 <b>All Accounts:</b>\n\n${accountsList}`, {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: inlineButtons }
+    });
+
+  } else {
+    // User — सिर्फ अपने accounts दिखाओ
+    const res = await db.query(
+      `SELECT email, password
+       FROM gmail_store WHERE user_id = $1`,
+      [userId]
+    );
+
+    if (res.rows.length === 0) {
+      return bot.sendMessage(chatId, "📭 आपके पास कोई भी active account नहीं है।");
+    }
+
+    const accountsList = res.rows.map(acc => {
+      return `📧 <b>${acc.email}</b>\n🔑 Pass: ${acc.password || "N/A"}`;
+    }).join("\n\n");
+
+    return bot.sendMessage(chatId, `📜 <b>Your Accounts:</b>\n\n${accountsList}`, {
+      parse_mode: "HTML"
+    });
+  }
+}
 
     // --- SET GMAIL (admin) ---
     if (data === "setgmail") {
