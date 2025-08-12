@@ -45,6 +45,16 @@ const pendingAdminActions = {}; // to keep simple contexts if needed
       )
     `);
 
+await db.query(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id SERIAL PRIMARY KEY,
+    email TEXT,
+    password TEXT,
+    buyer_id TEXT,
+    expiry TIMESTAMP
+  )
+`);
+
     // Migration from old JSON files if they exist
     try {
       if (fs.existsSync("auth-store.json")) {
@@ -363,6 +373,159 @@ bot.on("callback_query", async (query) => {
       });
       return;
     }
+    
+	// 📂 Accounts List Handler
+if (data === "accounts") {
+  if (isAdmin) {
+    // सभी अकाउंट्स
+    const res = await db.query(`
+      SELECT a.id, a.email, a.expiry, u.username, u.user_id
+      FROM accounts a
+      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+      ORDER BY a.expiry ASC
+    `);
+
+    if (res.rows.length === 0) {
+      return bot.sendMessage(chatId, "📂 कोई अकाउंट नहीं है।", {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "➕ Add Account", callback_data: "add_account" }
+          ]]
+        }
+      });
+    }
+
+    let textMsg = "📂 *सभी अकाउंट्स*\n\n";
+    let buttons = [];
+
+    res.rows.forEach(row => {
+      textMsg += `📧 ${row.email}\n⏳ Expiry: ${new Date(row.expiry).toLocaleDateString()}\n👤 Buyer: @${row.username || "unknown"} (ID: ${row.user_id || row.buyer_id})\n\n`;
+      buttons.push([{ text: `✏️ Edit ${row.email}`, callback_data: `edit_acc_${row.id}` }]);
+    });
+
+    // आख़िर में Add/Remove बटन
+    buttons.push([
+      { text: "➕ Add Account", callback_data: "add_account" },
+      { text: "➖ Remove Account", callback_data: "remove_account" }
+    ]);
+
+    return bot.sendMessage(chatId, textMsg, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: buttons }
+    });
+
+  } else {
+    // User के लिए सिर्फ़ अपने अकाउंट्स
+    const res = await db.query(`SELECT * FROM accounts WHERE buyer_id = $1 ORDER BY expiry ASC`, [fromId]);
+    if (res.rows.length === 0) return bot.sendMessage(chatId, "📂 आपके पास कोई अकाउंट नहीं है।");
+
+    let textMsg = "📂 *आपके अकाउंट्स*\n\n";
+    res.rows.forEach(row => {
+      textMsg += `📧 ${row.email}\n⏳ Expiry: ${new Date(row.expiry).toLocaleDateString()}\n\n`;
+    });
+
+    return bot.sendMessage(chatId, textMsg, { parse_mode: "Markdown" });
+  }
+}
+
+// ✏️ Edit Account
+if (data.startsWith("edit_acc_")) {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 केवल एडमिन के लिए।");
+  const accId = data.split("_")[2];
+  return bot.sendMessage(chatId, "✏️ Edit Options:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "🔄 Renew", callback_data: `renew_acc_${accId}` }],
+        [{ text: "♻️ Replace Account", callback_data: `replace_acc_${accId}` }]
+      ]
+    }
+  });
+}
+
+// 🔄 Renew Step 1 - महीने चुनना
+if (data.startsWith("renew_acc_") && data.split("_").length === 3) {
+  const accId = data.split("_")[2];
+  return bot.sendMessage(chatId, "🔄 कितने महीने बढ़ाना है?", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "1m", callback_data: `renew_acc_${accId}_1` },
+          { text: "3m", callback_data: `renew_acc_${accId}_3` }
+        ],
+        [
+          { text: "6m", callback_data: `renew_acc_${accId}_6` },
+          { text: "12m", callback_data: `renew_acc_${accId}_12` }
+        ]
+      ]
+    }
+  });
+}
+
+// 🔄 Renew Step 2 - डेट अपडेट करना
+if (data.startsWith("renew_acc_") && data.split("_").length === 4) {
+  const accId = data.split("_")[2];
+  const months = parseInt(data.split("_")[3]);
+  const res = await db.query(`SELECT expiry FROM accounts WHERE id = $1`, [accId]);
+  if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ अकाउंट नहीं मिला।");
+
+  let expiry = new Date(res.rows[0].expiry);
+  expiry.setMonth(expiry.getMonth() + months);
+
+  await db.query(`UPDATE accounts SET expiry = $1 WHERE id = $2`, [expiry, accId]);
+  return bot.sendMessage(chatId, `✅ Expiry ${months} महीने बढ़ा दी गई।`);
+}
+
+// ♻️ Replace Account
+if (data.startsWith("replace_acc_")) {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 केवल एडमिन के लिए।");
+  const accId = data.split("_")[2];
+  bot.sendMessage(chatId, "📩 नया ईमेल और पासवर्ड इस फॉर्मेट में भेजें:\n`email@example.com password`", { parse_mode: "Markdown" });
+
+  bot.once("message", async (msg) => {
+    if (!msg.text) return bot.sendMessage(chatId, "⚠️ गलत इनपुट।");
+    const [email, password] = msg.text.trim().split(" ");
+    if (!email || !password) return bot.sendMessage(chatId, "⚠️ सही फॉर्मेट इस्तेमाल करें।");
+
+    await db.query(`UPDATE accounts SET email = $1, password = $2 WHERE id = $3`, [email, password, accId]);
+    return bot.sendMessage(chatId, "✅ अकाउंट अपडेट हो गया।");
+  });
+}
+
+// ➕ Add Account
+if (data === "add_account") {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 केवल एडमिन के लिए।");
+  bot.sendMessage(chatId, "📩 अकाउंट डिटेल इस फॉर्मेट में भेजें:\n`email@example.com password buyer_id months`", { parse_mode: "Markdown" });
+
+  bot.once("message", async (msg) => {
+    if (!msg.text) return bot.sendMessage(chatId, "⚠️ गलत इनपुट।");
+    const [email, password, buyer_id, months] = msg.text.trim().split(" ");
+    if (!email || !password || !buyer_id || !months) return bot.sendMessage(chatId, "⚠️ फॉर्मेट सही नहीं है।");
+
+    let expiry = new Date();
+    expiry.setMonth(expiry.getMonth() + parseInt(months));
+
+    await db.query(
+      `INSERT INTO accounts (email, password, buyer_id, expiry) VALUES ($1, $2, $3, $4)`,
+      [email, password, buyer_id, expiry]
+    );
+    return bot.sendMessage(chatId, "✅ अकाउंट ऐड हो गया।");
+  });
+}
+
+// ➖ Remove Account
+if (data === "remove_account") {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 केवल एडमिन के लिए।");
+  bot.sendMessage(chatId, "🗑️ जिस अकाउंट का ID हटाना है, वो भेजें:");
+
+  bot.once("message", async (msg) => {
+    const accId = msg.text.trim();
+    const res = await db.query(`SELECT 1 FROM accounts WHERE id = $1`, [accId]);
+    if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ अकाउंट नहीं मिला।");
+
+    await db.query(`DELETE FROM accounts WHERE id = $1`, [accId]);
+    return bot.sendMessage(chatId, "✅ अकाउंट डिलीट हो गया।");
+  });
+}
 
     // --- SET GMAIL (admin) ---
     if (data === "setgmail") {
