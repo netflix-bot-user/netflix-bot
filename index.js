@@ -364,55 +364,35 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- ACCOUNTS LIST ---
-if (data === "accounts") {
-  if (isAdmin) {
-    const res = await db.query(
-      `SELECT user_id, email, password, expires, buyer_username, buyer_id
-       FROM gmail_store ORDER BY expires DESC`
-    );
-    if (res.rows.length === 0) {
-      return bot.sendMessage(chatId, "📭 No accounts found.");
-    }
-
-    const accountsList = res.rows.map(acc => {
-      const expDate = acc.expires ? new Date(acc.expires).toLocaleDateString() : "N/A";
-      return `📧 <b>${acc.email}</b>\n🔑 ${acc.password}\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.buyer_id || "N/A"})`;
-    }).join("\n\n");
-
-    const inlineButtons = res.rows.map(acc => [
-      { text: `✏️ Edit (${acc.email})`, callback_data: `editacc_${acc.email}` }
-    ]);
-
-    inlineButtons.push([
-      { text: "➕ Add Account", callback_data: "add_account" },
-      { text: "➖ Remove Account", callback_data: "remove_account" }
-    ]);
-
-    return bot.sendMessage(chatId, `📜 <b>All Accounts:</b>\n\n${accountsList}`, {
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: inlineButtons }
-    });
-
-  } else {
-    const res = await db.query(
-      `SELECT email, password, expires
-       FROM gmail_store WHERE user_id = $1 ORDER BY expires DESC`,
-      [userId]
-    );
-    if (res.rows.length === 0) {
-      return bot.sendMessage(chatId, "📭 You have no active accounts.");
-    }
-
-    const accountsList = res.rows.map(acc => {
-      const expDate = acc.expires ? new Date(acc.expires).toLocaleDateString() : "N/A";
-      return `📧 <b>${acc.email}</b>\n🔑 ${acc.password}\n⏳ Expiry: ${expDate}`;
-    }).join("\n\n");
-
-    return bot.sendMessage(chatId, `📜 <b>Your Accounts:</b>\n\n${accountsList}`, {
-      parse_mode: "HTML"
-    });
+    if (isAdmin) {
+  // Admin — सभी accounts दिखाओ
+  const res = await db.query(
+    `SELECT email, buyer_username, buyer_id 
+     FROM gmail_store ORDER BY email ASC`
+  );
+  if (res.rows.length === 0) {
+    return bot.sendMessage(chatId, "📭 कोई भी account नहीं मिला।");
   }
+
+  // हर account के लिए text + Edit बटन
+  const accountsList = res.rows.map(acc => {
+    return `📧 <b>${acc.email}</b>\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.buyer_id || "N/A"})`;
+  }).join("\n\n");
+
+  const inlineButtons = res.rows.map(acc => [
+    { text: `✏️ Edit (${acc.email})`, callback_data: `editacc_${acc.email}` }
+  ]);
+
+  // नीचे Add / Remove बटन
+  inlineButtons.push([
+    { text: "➕ Add Account", callback_data: "add_account" },
+    { text: "➖ Remove Account", callback_data: "remove_account" }
+  ]);
+
+  return bot.sendMessage(chatId, `📜 <b>All Accounts:</b>\n\n${accountsList}`, {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: inlineButtons }
+  });
 }
 
 // --- EDIT ACCOUNT HANDLER ---

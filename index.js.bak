@@ -465,28 +465,29 @@ if (data === "add_account") {
   });
 }
 
-// --- REMOVE ACCOUNT HANDLER ---
 if (data === "remove_account") {
+  const res = await db.query("SELECT email FROM gmail_store");
+  if (res.rows.length === 0) {
+    return bot.sendMessage(chatId, "📭 No accounts found to remove.");
+  }
+
+  const inlineButtons = res.rows.map(acc => [
+    { text: `🗑 ${acc.email}`, callback_data: `delacc_${acc.email}` }
+  ]);
+
+  return bot.sendMessage(chatId, "Select the account to remove:", {
+    reply_markup: { inline_keyboard: inlineButtons }
+  });
+}
+
+if (data.startsWith("delacc_")) {
+  const emailToDelete = data.split("_")[1];
   try {
-    const res = await db.query(
-      "SELECT email FROM gmail_store ORDER BY email ASC"
-    );
-
-    if (res.rows.length === 0) {
-      return bot.sendMessage(chatId, "📭 No accounts found to remove.");
-    }
-
-    const inlineButtons = res.rows.map(acc => [
-      { text: `🗑 Remove ${acc.email}`, callback_data: `removeacc_${acc.email}` }
-    ]);
-
-    return bot.sendMessage(chatId, "Select an account to remove:", {
-      reply_markup: { inline_keyboard: inlineButtons }
-    });
-
+    await db.query("DELETE FROM gmail_store WHERE email = $1", [emailToDelete]);
+    bot.sendMessage(chatId, `✅ Account deleted: ${emailToDelete}`);
   } catch (err) {
-    console.error("remove_account list error:", err.message);
-    bot.sendMessage(chatId, "⚠️ Error processing action.");
+    console.error("remove_account error:", err);
+    bot.sendMessage(chatId, "❌ Error removing account.");
   }
 }
 
