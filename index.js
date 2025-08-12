@@ -374,54 +374,82 @@ bot.on("callback_query", async (query) => {
       return;
     }
     
-	// 📂 Accounts List Handler
-if (data === "accounts") {
-  if (isAdmin) {
-    const res = await db.query(`
-      SELECT a.id, a.email, a.expiry, u.username, u.user_id
-      FROM accounts a
-      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
-      ORDER BY a.expiry ASC
-    `);
+	// helper: escape text for HTML parse_mode
+function escapeHtml(text) {
+  if (!text && text !== 0) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-    if (res.rows.length === 0) {
-      return bot.sendMessage(chatId, "📂 No accounts found.", {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "➕ Add Account", callback_data: "add_account" }
-          ]]
-        }
+// Replace your previous "accounts" handler with this block:
+if (data === "accounts") {
+  try {
+    if (isAdmin) {
+      const res = await db.query(`
+        SELECT a.id, a.email, a.expiry, u.username, u.user_id
+        FROM accounts a
+        LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+        ORDER BY a.expiry ASC
+      `);
+
+      if (res.rows.length === 0) {
+        return bot.sendMessage(chatId, "📂 No accounts found.", {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "➕ Add Account", callback_data: "add_account" }
+            ]]
+          }
+        });
+      }
+
+      let textMsg = "📂 <b>All Accounts</b>\n\n";
+      let buttons = [];
+
+      res.rows.forEach(row => {
+        const email = escapeHtml(row.email || "");
+        const expiry = row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A";
+        const buyerUsername = escapeHtml(row.username || "unknown");
+        const buyerId = escapeHtml(row.user_id || row.buyer_id || "");
+        textMsg += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n👤 Buyer: @${buyerUsername} (ID: ${buyerId})\n\n`;
+
+        // each account gets an Edit button (callback_data must be short/clean)
+        buttons.push([{ text: `✏️ Edit ${row.id}`, callback_data: `edit_acc_${row.id}` }]);
+      });
+
+      // finally add Add/Remove line
+      buttons.push([
+        { text: "➕ Add Account", callback_data: "add_account" },
+        { text: "➖ Remove Account", callback_data: "remove_account" }
+      ]);
+
+      return bot.sendMessage(chatId, textMsg, {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: buttons }
+      });
+
+    } else {
+      // normal user: show only their accounts (not expired? you decide)
+      // here we show all accounts with buyer_id == fromId
+      const res = await db.query(`SELECT id, email, expiry FROM accounts WHERE buyer_id = $1 ORDER BY expiry ASC`, [fromId]);
+      if (res.rows.length === 0) return bot.sendMessage(chatId, "📂 You have no accounts.");
+
+      let textMsg = "📂 <b>Your Accounts</b>\n\n";
+      res.rows.forEach(row => {
+        const email = escapeHtml(row.email || "");
+        const expiry = row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A";
+        textMsg += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n\n`;
+      });
+
+      return bot.sendMessage(chatId, textMsg, {
+        parse_mode: "HTML"
       });
     }
-
-    let textMsg = "📂 *All Accounts*\n\n";
-    let buttons = [];
-
-    res.rows.forEach(row => {
-      textMsg += `📧 ${row.email}\n⏳ Expiry: ${new Date(row.expiry).toLocaleDateString()}\n👤 Buyer: @${row.username || "unknown"} (ID: ${row.user_id || row.buyer_id})\n\n`;
-      buttons.push([{ text: `✏️ Edit ${row.email}`, callback_data: `edit_acc_${row.id}` }]);
-    });
-
-    buttons.push([
-      { text: "➕ Add Account", callback_data: "add_account" },
-      { text: "➖ Remove Account", callback_data: "remove_account" }
-    ]);
-
-    return bot.sendMessage(chatId, textMsg, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: buttons }
-    });
-
-  } else {
-    const res = await db.query(`SELECT * FROM accounts WHERE buyer_id = $1 ORDER BY expiry ASC`, [fromId]);
-    if (res.rows.length === 0) return bot.sendMessage(chatId, "📂 You have no accounts.");
-
-    let textMsg = "📂 *Your Accounts*\n\n";
-    res.rows.forEach(row => {
-      textMsg += `📧 ${row.email}\n⏳ Expiry: ${new Date(row.expiry).toLocaleDateString()}\n\n`;
-    });
-
-    return bot.sendMessage(chatId, textMsg, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("accounts handler error:", err.message);
+    return bot.sendMessage(chatId, "⚠️ Error fetching accounts.");
   }
 }
 

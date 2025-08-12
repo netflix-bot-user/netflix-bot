@@ -763,7 +763,7 @@ setInterval(async () => {
       const { email, buyer_id, expiry } = row;
       const message = `⚠️ Your plan for ${email} will expire tomorrow (${new Date(expiry).toLocaleDateString()}). Please renew.`;
       try {
-        await bot.sendMessage(buyer_id, message);
+        await bot.sendMessage(buyer_id, message); // removed parse_mode to avoid Telegram entity errors
       } catch (err) {
         console.error(`❌ Failed to send expiry reminder to ${buyer_id}:`, err.message);
       }
@@ -772,3 +772,4 @@ setInterval(async () => {
     console.error("❌ Expiry check error:", err.message);
   }
 }, 24 * 60 * 60 * 1000); // runs once every 24 hours
+
