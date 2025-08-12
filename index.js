@@ -367,28 +367,26 @@ bot.on("callback_query", async (query) => {
     // --- ACCOUNTS LIST ---
 if (data === "accounts") {
   if (isAdmin) {
-    // Admin — सभी accounts दिखाओ (gmail_store + authorized_users join करके)
+    // Admin — सभी accounts दिखाओ
     const res = await db.query(
-      `SELECT g.user_id, g.email, g.password, a.username AS buyer_username, a.expires
-       FROM gmail_store g
-       LEFT JOIN authorized_users a ON g.user_id = a.user_id
-       ORDER BY a.expires DESC NULLS LAST`
+      `SELECT user_id, email, expires, buyer_username, buyer_id 
+       FROM gmail_store ORDER BY expires DESC`
     );
-
     if (res.rows.length === 0) {
       return bot.sendMessage(chatId, "📭 कोई भी account नहीं मिला।");
     }
 
+    // हर account के लिए text + Edit बटन
     const accountsList = res.rows.map(acc => {
       const expDate = acc.expires ? new Date(acc.expires).toLocaleDateString() : "N/A";
-      return `📧 <b>${acc.email}</b>\n🔑 Pass: ${acc.password || "N/A"}\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.user_id})`;
+      return `📧 <b>${acc.email}</b>\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.buyer_id || "N/A"})`;
     }).join("\n\n");
 
     const inlineButtons = res.rows.map(acc => [
       { text: `✏️ Edit (${acc.email})`, callback_data: `editacc_${acc.user_id}` }
     ]);
 
-    // Add / Remove buttons
+    // नीचे Add / Remove बटन
     inlineButtons.push([
       { text: "➕ Add Account", callback_data: "add_account" },
       { text: "➖ Remove Account", callback_data: "remove_account" }
@@ -402,17 +400,17 @@ if (data === "accounts") {
   } else {
     // User — सिर्फ अपने accounts दिखाओ
     const res = await db.query(
-      `SELECT email, password
-       FROM gmail_store WHERE user_id = $1`,
+      `SELECT email, expires 
+       FROM gmail_store WHERE user_id = $1 ORDER BY expires DESC`,
       [userId]
     );
-
     if (res.rows.length === 0) {
       return bot.sendMessage(chatId, "📭 आपके पास कोई भी active account नहीं है।");
     }
 
     const accountsList = res.rows.map(acc => {
-      return `📧 <b>${acc.email}</b>\n🔑 Pass: ${acc.password || "N/A"}`;
+      const expDate = acc.expires ? new Date(acc.expires).toLocaleDateString() : "N/A";
+      return `📧 <b>${acc.email}</b>\n⏳ Expiry: ${expDate}`;
     }).join("\n\n");
 
     return bot.sendMessage(chatId, `📜 <b>Your Accounts:</b>\n\n${accountsList}`, {
@@ -421,106 +419,111 @@ if (data === "accounts") {
   }
 }
 
-// --- EDIT ACCOUNT (admin only) ---
+// --- EDIT ACCOUNT HANDLER (EMAIL BASED) ---
 if (data.startsWith("editacc_")) {
-  if (!isAdmin) return bot.sendMessage(chatId, "❌ You are not authorized.");
+  const email = data.replace("editacc_", ""); // email निकाला
 
-  const accId = data.split("_")[1];
   try {
     const res = await db.query(
-      `SELECT id, email, password, expires, buyer_username, buyer_id 
-       FROM gmail_store WHERE id = $1`,
-      [accId]
+      "SELECT email, password, expires, buyer_username, user_id FROM gmail_store WHERE email = $1",
+      [email]
     );
+
     if (res.rows.length === 0) {
       return bot.sendMessage(chatId, "❌ Account not found.");
     }
 
     const acc = res.rows[0];
-    const expDate = new Date(acc.expires).toLocaleDateString();
+    const expDate = acc.expires
+      ? new Date(acc.expires).toLocaleString()
+      : "N/A";
 
-    await bot.sendMessage(
+    return bot.sendMessage(
       chatId,
-      `✏️ <b>Edit Account</b>\n\n📧 Email: ${acc.email}\n🔑 Password: ${acc.password}\n⏳ Expires: ${expDate}\n👤 Buyer: ${acc.buyer_username} (${acc.buyer_id})\n\nSend new details in format:\n<code>email@example.com password YYYY-MM-DD</code>`,
+      `✏️ <b>Edit Account</b>\n📧 Email: ${acc.email}\n🔑 Password: ${acc.password || "N/A"}\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.user_id || "N/A"})`,
       { parse_mode: "HTML" }
     );
-
-    bot.once("message", async (msg) => {
-      if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
-      const parts = msg.text.trim().split(" ");
-      if (parts.length < 3) {
-        return bot.sendMessage(chatId, "⚠️ Format incorrect. Example:\n<code>email@example.com password 2025-12-31</code>", { parse_mode: "HTML" });
-      }
-
-      const [newEmail, newPass, newExpiry] = parts;
-      await db.query(
-        `UPDATE gmail_store SET email = $1, password = $2, expires = $3 WHERE id = $4`,
-        [newEmail, newPass, newExpiry, accId]
-      );
-
-      return bot.sendMessage(chatId, "✅ Account updated successfully!");
-    });
-  } catch (e) {
-    console.error("editacc handler error:", e.message);
-    return bot.sendMessage(chatId, "❌ Error processing action.");
+  } catch (err) {
+    console.error("editacc handler error:", err.message);
+    bot.sendMessage(chatId, "⚠️ Error processing action.");
   }
 }
 
-
 // --- ADD ACCOUNT HANDLER ---
 if (data === "add_account") {
-  await bot.sendMessage(chatId, "📧 Please send the new account in this format:\n\n`email@example.com password`", {
-    parse_mode: "Markdown"
+  bot.sendMessage(chatId, "📧 Please send the new account in this format:\n\n<code>email@example.com password</code>", {
+    parse_mode: "HTML"
   });
 
   bot.once("message", async (msg) => {
+    const input = msg.text.trim();
+    const parts = input.split(" ");
+
+    if (parts.length < 2) {
+      return bot.sendMessage(chatId, "❌ Invalid format.\nCorrect format:\n<code>email@example.com password</code>", {
+        parse_mode: "HTML"
+      });
+    }
+
+    const [email, password] = parts;
+
     try {
-      if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input. Please send text only.");
-
-      const parts = msg.text.trim().split(" ");
-      if (parts.length < 2) {
-        return bot.sendMessage(chatId, "⚠️ Wrong format.\nExample: `email@example.com password`", { parse_mode: "Markdown" });
-      }
-
-      const email = parts[0].trim();
-      const password = parts.slice(1).join(" ").trim();
-
-      // Basic email validation
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return bot.sendMessage(chatId, "⚠️ Invalid email format.");
-      }
-
-      // Save to database (no expiry or buyer info yet)
       await db.query(
-        `INSERT INTO gmail_store (email, password) VALUES ($1, $2)`,
-        [email, password]
+        "INSERT INTO gmail_store (user_id, email, password) VALUES ($1, $2, $3)",
+        [userId, email, password]
       );
-
-      return bot.sendMessage(chatId, `✅ Account added successfully!\n📧 Email: ${email}`);
-    } catch (e) {
-      console.error("add_account error:", e.message);
-      return bot.sendMessage(chatId, "❌ Error adding account.");
+      bot.sendMessage(chatId, `✅ Account added successfully!\n📧 ${email}`);
+    } catch (err) {
+      console.error("add_account error:", err.message);
+      bot.sendMessage(chatId, "❌ Error adding account.");
     }
   });
-
-  return;
 }
 
 // --- REMOVE ACCOUNT HANDLER ---
 if (data === "remove_account") {
-  const res = await db.query(`SELECT id, email FROM gmail_store ORDER BY id ASC`);
-  if (res.rows.length === 0) {
-    return bot.sendMessage(chatId, "📭 No accounts found.");
+  try {
+    const res = await db.query(
+      "SELECT email FROM gmail_store ORDER BY email ASC"
+    );
+
+    if (res.rows.length === 0) {
+      return bot.sendMessage(chatId, "📭 No accounts found to remove.");
+    }
+
+    const inlineButtons = res.rows.map(acc => [
+      { text: `🗑 Remove ${acc.email}`, callback_data: `removeacc_${acc.email}` }
+    ]);
+
+    return bot.sendMessage(chatId, "Select an account to remove:", {
+      reply_markup: { inline_keyboard: inlineButtons }
+    });
+
+  } catch (err) {
+    console.error("remove_account list error:", err.message);
+    bot.sendMessage(chatId, "⚠️ Error processing action.");
   }
+}
 
-  // Inline keyboard with remove buttons
-  const inlineButtons = res.rows.map(acc => [
-    { text: `❌ ${acc.email}`, callback_data: `delacc_${acc.id}` }
-  ]);
+// --- CONFIRM REMOVE HANDLER ---
+if (data.startsWith("removeacc_")) {
+  const email = data.replace("removeacc_", "");
 
-  return bot.sendMessage(chatId, "Select an account to remove:", {
-    reply_markup: { inline_keyboard: inlineButtons }
-  });
+  try {
+    const delRes = await db.query(
+      "DELETE FROM gmail_store WHERE email = $1",
+      [email]
+    );
+
+    if (delRes.rowCount === 0) {
+      return bot.sendMessage(chatId, "❌ Account not found.");
+    }
+
+    bot.sendMessage(chatId, `✅ Account removed successfully!\n📧 ${email}`);
+  } catch (err) {
+    console.error("removeacc handler error:", err.message);
+    bot.sendMessage(chatId, "⚠️ Error removing account.");
+  }
 }
 
 // --- DELETE ACCOUNT HANDLER ---
