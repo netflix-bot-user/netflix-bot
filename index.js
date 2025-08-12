@@ -421,6 +421,67 @@ if (data === "accounts") {
   }
 }
 
+// --- EDIT ACCOUNT HANDLER ---
+if (data.startsWith("editacc_")) {
+  const accId = data.split("_")[1]; // ID निकालो
+  const res = await db.query(
+    "SELECT id, email, expires, buyer_username, buyer_id FROM gmail_store WHERE id = $1",
+    [accId]
+  );
+
+  if (res.rows.length === 0) {
+    return bot.sendMessage(chatId, "❌ यह account नहीं मिला।");
+  }
+
+  const acc = res.rows[0];
+  const expDate = acc.expires ? new Date(acc.expires).toLocaleString() : "N/A";
+
+  return bot.sendMessage(chatId, `✏️ <b>Edit Account</b>\n📧 Email: ${acc.email}\n⏳ Expiry: ${expDate}\n👤 Buyer: ${acc.buyer_username || "N/A"} (${acc.buyer_id || "N/A"})`, {
+    parse_mode: "HTML"
+  });
+}
+
+// --- ADD ACCOUNT HANDLER ---
+if (data === "add_account") {
+  bot.sendMessage(chatId, "📧 कृपया नया account इस format में भेजें:\n\n<code>email@example.com | password</code>", {
+    parse_mode: "HTML"
+  });
+
+  // अगला message capture करने के लिए listener
+  bot.once("message", async (msg) => {
+    if (msg.chat.id !== chatId) return;
+    const input = msg.text.trim();
+    const parts = input.split("|");
+
+    if (parts.length < 2) {
+      return bot.sendMessage(chatId, "❌ Invalid format. कृपया इस format का प्रयोग करें:\n<code>email@example.com | password</code>", { parse_mode: "HTML" });
+    }
+
+    const email = parts[0].trim();
+    const password = parts[1].trim();
+
+    await db.query(
+      "INSERT INTO gmail_store (user_id, email, password) VALUES ($1, $2, $3)",
+      [chatId.toString(), email, password]
+    );
+
+    bot.sendMessage(chatId, `✅ Account जोड़ा गया:\n📧 ${email}`);
+  });
+}
+
+// --- REMOVE ACCOUNT HANDLER ---
+if (data.startsWith("remove_account:")) {
+  const emailToRemove = data.split(":")[1];
+
+  if (!emailToRemove) {
+    return bot.sendMessage(chatId, "❌ Email not found.");
+  }
+
+  await db.query("DELETE FROM gmail_store WHERE email = $1", [emailToRemove]);
+
+  bot.sendMessage(chatId, `🗑 Account हटाया गया:\n📧 ${emailToRemove}`);
+}
+
     // --- SET GMAIL (admin) ---
     if (data === "setgmail") {
       if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
