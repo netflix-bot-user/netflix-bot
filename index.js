@@ -746,3 +746,29 @@ if (data === "remove_account") {
     try { await bot.sendMessage(chatId, "⚠️ Error processing action."); } catch (_) {}
   }
 });
+
+// Daily check for accounts expiring tomorrow
+setInterval(async () => {
+  try {
+    // Find accounts expiring tomorrow
+    const res = await db.query(`
+      SELECT a.email, a.buyer_id, a.expiry, u.username
+      FROM accounts a
+      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+      WHERE a.expiry::date = (CURRENT_DATE + INTERVAL '1 day')::date
+      AND a.buyer_id IS NOT NULL
+    `);
+
+    for (const row of res.rows) {
+      const { email, buyer_id, expiry } = row;
+      const message = `⚠️ Your plan for ${email} will expire tomorrow (${new Date(expiry).toLocaleDateString()}). Please renew.`;
+      try {
+        await bot.sendMessage(buyer_id, message);
+      } catch (err) {
+        console.error(`❌ Failed to send expiry reminder to ${buyer_id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("❌ Expiry check error:", err.message);
+  }
+}, 24 * 60 * 60 * 1000); // runs once every 24 hours
