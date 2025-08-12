@@ -509,17 +509,17 @@ if (data === "add_account") {
   });
 }
 
-// ➖ Remove Account
+// ➖ Remove Account (by Email)
 if (data === "remove_account") {
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
-  bot.sendMessage(chatId, "🗑️ Send the account ID you want to remove:");
+  bot.sendMessage(chatId, "🗑️ Send the account EMAIL you want to remove:");
 
   bot.once("message", async (msg) => {
-    const accId = msg.text.trim();
-    const res = await db.query(`SELECT 1 FROM accounts WHERE id = $1`, [accId]);
+    const accEmail = msg.text.trim();
+    const res = await db.query(`SELECT 1 FROM accounts WHERE email = $1`, [accEmail]);
     if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ Account not found.");
 
-    await db.query(`DELETE FROM accounts WHERE id = $1`, [accId]);
+    await db.query(`DELETE FROM accounts WHERE email = $1`, [accEmail]);
     return bot.sendMessage(chatId, "✅ Account deleted successfully.");
   });
 }
