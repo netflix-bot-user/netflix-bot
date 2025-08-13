@@ -384,7 +384,7 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-// Replace your previous "accounts" handler with this block:
+// 📂 Accounts main view
 if (data === "accounts") {
   try {
     if (isAdmin) {
@@ -398,41 +398,36 @@ if (data === "accounts") {
       if (res.rows.length === 0) {
         return bot.sendMessage(chatId, "📂 No accounts found.", {
           reply_markup: {
-            inline_keyboard: [[
-              { text: "➕ Add Account", callback_data: "add_account" }
-            ]]
+            inline_keyboard: [
+              [{ text: "➕ Add Account", callback_data: "add_account" }]
+            ]
           }
         });
       }
 
       let textMsg = "📂 <b>All Accounts</b>\n\n";
-      let buttons = [];
-
       res.rows.forEach(row => {
         const email = escapeHtml(row.email || "");
         const expiry = row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A";
         const buyerUsername = escapeHtml(row.username || "unknown");
         const buyerId = escapeHtml(row.user_id || row.buyer_id || "");
         textMsg += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n👤 Buyer: @${buyerUsername} (ID: ${buyerId})\n\n`;
-
-        // each account gets an Edit button (callback_data must be short/clean)
-        buttons.push([{ text: `✏️ Edit ${row.id}`, callback_data: `edit_acc_${row.id}` }]);
       });
-
-      // finally add Add/Remove line
-      buttons.push([
-        { text: "➕ Add Account", callback_data: "add_account" },
-        { text: "➖ Remove Account", callback_data: "remove_account" }
-      ]);
 
       return bot.sendMessage(chatId, textMsg, {
         parse_mode: "HTML",
-        reply_markup: { inline_keyboard: buttons }
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✏️ Edit Accounts", callback_data: "edit_accounts" }],
+            [
+              { text: "➕ Add Account", callback_data: "add_account" },
+              { text: "➖ Remove Account", callback_data: "remove_account" }
+            ]
+          ]
+        }
       });
 
     } else {
-      // normal user: show only their accounts (not expired? you decide)
-      // here we show all accounts with buyer_id == fromId
       const res = await db.query(`SELECT id, email, expiry FROM accounts WHERE buyer_id = $1 ORDER BY expiry ASC`, [fromId]);
       if (res.rows.length === 0) return bot.sendMessage(chatId, "📂 You have no accounts.");
 
@@ -443,14 +438,35 @@ if (data === "accounts") {
         textMsg += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n\n`;
       });
 
-      return bot.sendMessage(chatId, textMsg, {
-        parse_mode: "HTML"
-      });
+      return bot.sendMessage(chatId, textMsg, { parse_mode: "HTML" });
     }
   } catch (err) {
     console.error("accounts handler error:", err.message);
     return bot.sendMessage(chatId, "⚠️ Error fetching accounts.");
   }
+}
+
+// ✏️ Edit Accounts list
+if (data === "edit_accounts") {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+  const res = await db.query(`
+    SELECT a.id, a.email
+    FROM accounts a
+    ORDER BY a.expiry ASC
+  `);
+
+  if (res.rows.length === 0) {
+    return bot.sendMessage(chatId, "📂 No accounts to edit.");
+  }
+
+  let buttons = res.rows.map(row => {
+    return [{ text: `✏️ Edit ${row.id}`, callback_data: `edit_acc_${row.id}` }];
+  });
+
+  return bot.sendMessage(chatId, "✏️ Select an account to edit:", {
+    reply_markup: { inline_keyboard: buttons }
+  });
 }
 
 // ✏️ Edit Account
@@ -537,18 +553,20 @@ if (data === "add_account") {
   });
 }
 
-// ➖ Remove Account (by Email)
+// ➖ Remove Account (by ID)
 if (data === "remove_account") {
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
-  bot.sendMessage(chatId, "🗑️ Send the account EMAIL you want to remove:");
+  bot.sendMessage(chatId, "🗑️ Send the account ID you want to remove:");
 
   bot.once("message", async (msg) => {
-    const accEmail = msg.text.trim();
-    const res = await db.query(`SELECT 1 FROM accounts WHERE email = $1`, [accEmail]);
+    const accId = msg.text.trim();
+    if (!/^\d+$/.test(accId)) return bot.sendMessage(chatId, "⚠️ Please send a valid numeric ID.");
+
+    const res = await db.query(`SELECT 1 FROM accounts WHERE id = $1`, [accId]);
     if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ Account not found.");
 
-    await db.query(`DELETE FROM accounts WHERE email = $1`, [accEmail]);
-    return bot.sendMessage(chatId, "✅ Account deleted successfully.");
+    await db.query(`DELETE FROM accounts WHERE id = $1`, [accId]);
+    return bot.sendMessage(chatId, `✅ Account ID ${accId} deleted successfully.`);
   });
 }
 
