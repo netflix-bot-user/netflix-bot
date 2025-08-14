@@ -219,6 +219,8 @@ bot.on("message", async (msg) => {
 });
 
 // Callback handler (mainly all button actions)
+let awaitingKey = {};
+
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const fromId = query.from.id.toString();

@@ -368,12 +368,11 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- REDEEM KEY (user) ---
     // 🎯 Redeem Key Handler (message listener)
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
 
-    // अगर ये यूज़र redeem mode में है
+    // अगर यूज़र redeem mode में है
     if (awaitingKey[chatId]) {
         const keyInput = msg.text.trim();
         console.log("DEBUG: Redeem request for key =", keyInput);
@@ -402,26 +401,22 @@ bot.on("message", async (msg) => {
                 [chatId, keyInput]
             );
 
-            // 🔹 Success message with monospace key
             bot.sendMessage(
                 chatId, 
                 `✅ Key redeemed successfully!\nMembership activated for ${keyData.duration_months} month(s).\nYour Key: \`${keyInput}\``,
                 { parse_mode: "Markdown" }
             );
 
-            delete awaitingKey[chatId];
-
-        } catch (err) {
-            console.error("Redeem key error:", err);
-            delete awaitingKey[chatId];
+        } catch (e) {
+            console.error("Redeem key error:", e);
             bot.sendMessage(chatId, "⚠️ Error processing key.");
         }
+
+        // आखिर में mode reset कर दो
+        delete awaitingKey[chatId];
     }
 });
-      });
-      return;
-    }
-    
+
 	// helper: escape text for HTML parse_mode
 function escapeHtml(text) {
   if (!text && text !== 0) return "";
