@@ -230,54 +230,50 @@ bot.on("callback_query", async (query) => {
 
   try {
     // --- GENERATE KEY (admin) ---
-	if (data === "genkey") {
-  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-  return bot.sendMessage(chatId, "🗝️ Select key duration:", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "1 Month", callback_data: "key_1" },
-          { text: "3 Months", callback_data: "key_3" }
-        ],
-        [
-          { text: "6 Months", callback_data: "key_6" },
-          { text: "12 Months", callback_data: "key_12" }
-        ]
-      ]
-    }
-  });
+if (data === "genkey") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+    return bot.sendMessage(chatId, "🗝️ Select key duration:", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "1 Month", callback_data: "key_1" },
+                    { text: "3 Months", callback_data: "key_3" }
+                ],
+                [
+                    { text: "6 Months", callback_data: "key_6" },
+                    { text: "12 Months", callback_data: "key_12" }
+                ]
+            ]
+        }
+    });
 }
 
-    if (data.startsWith("key_")) {
-  console.log("DEBUG: Key generation triggered with data =", data);
-  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-  const months = parseInt(data.split("_")[1], 10);
-  console.log("DEBUG: Months parsed =", months);
+if (data.startsWith("key_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+    
+    const months = parseInt(data.split("_")[1], 10);
+    const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
 
-  const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-  console.log("DEBUG: Generated key =", key);
+    const expiry = new Date();
+    expiry.setMonth(expiry.getMonth() + months);
 
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  console.log("DEBUG: Plan expiry date =", expiry);
+    try {
+        await db.query(
+            `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
+             VALUES ($1, $2, $3, $4, NOW(), $5)`,
+            [key, months, expiry.toISOString(), false, key]
+        );
 
-  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
-  console.log("DEBUG: Activation deadline =", activationDeadline);
+        return bot.sendMessage(
+            chatId, 
+            `✅ Key generated: \`${key}\`\nValid for: ${months} month(s)\n⚠️ Must be activated before expiry date.`,
+            { parse_mode: "Markdown" }
+        );
 
-  try {
-    await db.query(
-  `INSERT INTO license_keys (key, duration, expires, used)
-   VALUES ($1, $2, $3, $4)
-   ON CONFLICT (key) DO NOTHING`,
-  [key, months, expiry.toISOString(), false]
-);
-    console.log("DEBUG: Insert success");
-  } catch (e) {
-    console.error("DB Insert error in key generation:", e.message);
-    return bot.sendMessage(chatId, "❌ DB error while generating key.");
-  }
-
-  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
+    } catch (e) {
+        console.error("DB Insert error in key generation:", e.message);
+        return bot.sendMessage(chatId, "❌ DB error while generating key.");
+    }
 }
 
     // --- USERLIST (admin) ---
@@ -391,13 +387,14 @@ bot.on("message", async (msg) => {
         console.log("DEBUG: Redeem request for key =", keyInput);
 
         try {
+            // Key ढूंढो
             const res = await db.query(
-  `SELECT * FROM license_keys 
-   WHERE key = $1
-   AND used = false
-   AND (expires IS NULL OR expires > NOW())`,
-  [keyInput]
-);
+                `SELECT * FROM license_keys 
+                 WHERE license_key = $1
+                 AND used = false
+                 AND (expires IS NULL OR expires > NOW())`,
+                [keyInput]
+            );
 
             if (res.rows.length === 0) {
                 delete awaitingKey[chatId];
@@ -410,9 +407,16 @@ bot.on("message", async (msg) => {
             await db.query(
                 `UPDATE license_keys 
                  SET used = true, used_by = $1, used_at = NOW()
-                 WHERE license_key = $2 OR key_text = $2`,
+                 WHERE license_key = $2`,
                 [chatId, keyInput]
             );
+
+            // Membership expiry date निकालो
+            const expiry = new Date();
+            expiry.setMonth(expiry.getMonth() + keyData.duration_months);
+
+            // Authorized user save करो
+            await saveAuthorizedUser(chatId.toString(), msg.from.username || msg.from.first_name, expiry.toISOString());
 
             bot.sendMessage(
                 chatId, 

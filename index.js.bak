@@ -391,9 +391,10 @@ bot.on("message", async (msg) => {
         console.log("DEBUG: Redeem request for key =", keyInput);
 
         try {
+            // Key ढूंढो
             const res = await db.query(
                 `SELECT * FROM license_keys 
-                 WHERE (license_key = $1 OR key_text = $1) 
+                 WHERE license_key = $1
                  AND used = false
                  AND (expires IS NULL OR expires > NOW())`,
                 [keyInput]
@@ -410,9 +411,16 @@ bot.on("message", async (msg) => {
             await db.query(
                 `UPDATE license_keys 
                  SET used = true, used_by = $1, used_at = NOW()
-                 WHERE license_key = $2 OR key_text = $2`,
+                 WHERE license_key = $2`,
                 [chatId, keyInput]
             );
+
+            // Membership expiry date निकालो
+            const expiry = new Date();
+            expiry.setMonth(expiry.getMonth() + keyData.duration_months);
+
+            // Authorized user save करो
+            await saveAuthorizedUser(chatId.toString(), msg.from.username || msg.from.first_name, expiry.toISOString());
 
             bot.sendMessage(
                 chatId, 
