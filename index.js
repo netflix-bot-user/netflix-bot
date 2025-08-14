@@ -260,9 +260,9 @@ bot.on("callback_query", async (query) => {
 
   try {
     await db.query(
-      `INSERT INTO license_keys (key, duration, expires, used, activation_deadline)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [key, months, expiry.toISOString(), false, activationDeadline.toISOString()]
+      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
+       VALUES ($1, $2, $3, $4, NOW(), $5)`,
+      [key, months, expiry.toISOString(), false, key]
     );
     console.log("DEBUG: Insert success");
   } catch (e) {
