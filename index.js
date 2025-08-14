@@ -243,20 +243,35 @@ bot.on("callback_query", async (query) => {
     }
 
     if (data.startsWith("key_")) {
-      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-      const months = parseInt(data.split("_")[1], 10);
-      const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-      const expiry = new Date();
-      expiry.setMonth(expiry.getMonth() + months);
+  console.log("DEBUG: Key generation triggered with data =", data);
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+  const months = parseInt(data.split("_")[1], 10);
+  console.log("DEBUG: Months parsed =", months);
 
-      await db.query(
-        `INSERT INTO license_keys (key, duration, expires, used)
-         VALUES ($1, $2, $3, $4)`,
-        [key, months, expiry.toISOString(), false]
-      );
+  const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+  console.log("DEBUG: Generated key =", key);
 
-      return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)`);
-    }
+  const expiry = new Date();
+  expiry.setMonth(expiry.getMonth() + months);
+  console.log("DEBUG: Plan expiry date =", expiry);
+
+  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+  console.log("DEBUG: Activation deadline =", activationDeadline);
+
+  try {
+    await db.query(
+      `INSERT INTO license_keys (key, duration, expires, used, activation_deadline)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [key, months, expiry.toISOString(), false, activationDeadline.toISOString()]
+    );
+    console.log("DEBUG: Insert success");
+  } catch (e) {
+    console.error("DB Insert error in key generation:", e.message);
+    return bot.sendMessage(chatId, "❌ DB error while generating key.");
+  }
+
+  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
+}
 
     // --- USERLIST (admin) ---
     if (data === "userlist") {
