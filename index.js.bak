@@ -226,8 +226,7 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   const isAdmin = ADMIN_IDS.includes(fromId);
 
-  try {
-	  
+  try {  
     if (data.startsWith("key_")) {
   console.log("DEBUG: Key generation triggered with data =", data);
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
@@ -237,19 +236,18 @@ bot.on("callback_query", async (query) => {
   const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
   console.log("DEBUG: Generated key =", key);
 
-  const planExpiry = new Date();
-  planExpiry.setMonth(planExpiry.getMonth() + months);
-  console.log("DEBUG: Plan expiry date =", planExpiry);
+  const expiry = new Date();
+  expiry.setMonth(expiry.getMonth() + months);
+  console.log("DEBUG: Plan expiry date =", expiry);
 
-  const activationDeadline = new Date();
-  activationDeadline.setHours(activationDeadline.getHours() + 48); // 48 hrs to activate
+  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
   console.log("DEBUG: Activation deadline =", activationDeadline);
 
   try {
     await db.query(
-      `INSERT INTO license_keys (key_text, duration_months, expires, used, created_at, license_key)
-       VALUES ($1, $2, $3, $4, NOW(), $1)`,
-      [key, months, planExpiry.toISOString(), false]
+      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
+       VALUES ($1, $2, $3, $4, NOW(), $5)`,
+      [key, months, expiry.toISOString(), false, key]
     );
     console.log("DEBUG: Insert success");
   } catch (e) {
@@ -257,12 +255,7 @@ bot.on("callback_query", async (query) => {
     return bot.sendMessage(chatId, "❌ DB error while generating key.");
   }
 
-  // ✅ Send key in monospace format
-  return bot.sendMessage(
-    chatId, 
-    `✅ Key generated: \`${key}\`\nValid for: ${months} month(s)\nActivate within 48 hours!`,
-    { parse_mode: "Markdown" }
-  );
+  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
 }
 
     // --- USERLIST (admin) ---
