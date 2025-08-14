@@ -420,6 +420,32 @@ if (data.startsWith("confirm_del_unsold_")) {
     return bot.sendMessage(chatId, `🗑️ Stock ID ${stockId} deleted.`);
 }
 
+// ➕ ADD TO UNSOLD (multi-line support)
+if (data === "add_unsold") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+    bot.sendMessage(chatId, "📩 Send account details (one per line) in this format:\n`email@example.com password`", { parse_mode: "Markdown" });
+
+    bot.once("message", async (msg) => {
+        if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
+        const lines = msg.text.trim().split("\n");
+
+        let added = 0;
+        for (const line of lines) {
+            const parts = line.trim().split(" ");
+            if (parts.length < 2) continue;
+            const [email, password] = parts;
+            await db.query(
+                `INSERT INTO unsold_stock (email, password) VALUES ($1, $2)`,
+                [email, password]
+            );
+            added++;
+        }
+
+        bot.sendMessage(chatId, `✅ Added ${added} account(s) to Unsold Stock.`);
+    });
+}
+
     // --- USERLIST (admin) ---
     if (data === "userlist") {
       if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
