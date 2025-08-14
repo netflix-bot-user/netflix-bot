@@ -299,6 +299,16 @@ bot.on("callback_query", async (query) => {
       });
     }
 
+// --- REDEEM KEY ---
+if (data === "redeem") {
+  if (isAdmin) return bot.sendMessage(chatId, "🚫 Admins cannot redeem keys.");
+  const ok = await isAuthorized(fromId);
+  if (ok) return bot.sendMessage(chatId, "✅ You already have membership.");
+
+  awaitingKey[chatId] = true;
+  return bot.sendMessage(chatId, "🔑 Please enter your license key:");
+}
+
     // --- ADD USER (admin flow) ---
     if (data === "add_user") {
       if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
