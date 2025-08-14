@@ -369,26 +369,55 @@ bot.on("callback_query", async (query) => {
     }
 
     // --- REDEEM KEY (user) ---
-    if (data === "redeem") {
-      await bot.sendMessage(chatId, "🔑 Please send your license key:");
-      bot.once("message", async (msg) => {
-        try {
-          if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
-          const key = msg.text.trim();
-          const res = await db.query(`SELECT * FROM license_keys WHERE key = $1`, [key]);
-          if (res.rows.length === 0) return bot.sendMessage(chatId, "❌ Invalid key.");
-          const row = res.rows[0];
-          if (row.used) return bot.sendMessage(chatId, "⚠️ This key has already been used.");
+    // 🎯 Redeem Key Handler (message listener)
+bot.on("message", async (msg) => {
+    const chatId = msg.chat.id;
 
-          // Mark used and give authorized user
-          await db.query(`UPDATE license_keys SET used = true WHERE key = $1`, [key]);
-          // We'll set authorized_users with username and expires from the key
-          await saveAuthorizedUser(fromId, username, row.expires);
-          return bot.sendMessage(chatId, `✅ Key redeemed successfully!\nValid for: ${row.duration} month(s)\nExpires on: ${row.expires}`);
-        } catch (e) {
-          console.error("redeem handler error:", e.message);
-          return bot.sendMessage(chatId, "❌ Error processing key.");
+    // अगर ये यूज़र redeem mode में है
+    if (awaitingKey[chatId]) {
+        const keyInput = msg.text.trim();
+        console.log("DEBUG: Redeem request for key =", keyInput);
+
+        try {
+            const res = await db.query(
+                `SELECT * FROM license_keys 
+                 WHERE (license_key = $1 OR key_text = $1) 
+                 AND used = false
+                 AND (expires IS NULL OR expires > NOW())`,
+                [keyInput]
+            );
+
+            if (res.rows.length === 0) {
+                delete awaitingKey[chatId];
+                return bot.sendMessage(chatId, "❌ Invalid or expired key.");
+            }
+
+            const keyData = res.rows[0];
+
+            // ✅ Mark key as used
+            await db.query(
+                `UPDATE license_keys 
+                 SET used = true, used_by = $1, used_at = NOW()
+                 WHERE license_key = $2 OR key_text = $2`,
+                [chatId, keyInput]
+            );
+
+            // 🔹 Success message with monospace key
+            bot.sendMessage(
+                chatId, 
+                `✅ Key redeemed successfully!\nMembership activated for ${keyData.duration_months} month(s).\nYour Key: \`${keyInput}\``,
+                { parse_mode: "Markdown" }
+            );
+
+            delete awaitingKey[chatId];
+
+        } catch (err) {
+            console.error("Redeem key error:", err);
+            delete awaitingKey[chatId];
+            bot.sendMessage(chatId, "⚠️ Error processing key.");
         }
+    }
+});
       });
       return;
     }
