@@ -178,8 +178,12 @@ bot.onText(/\/start/, async (msg) => {
     { text: "👥 Userlist", callback_data: "userlist" }
   ]);
   buttons.push([
-    { text: "📂 Accounts", callback_data: "accounts" } // <-- नया बटन यहाँ
-  ]);
+    { text: "📂 Accounts", callback_data: "accounts" }
+]);
+buttons.push([
+    { text: "📮 Unsold Stock", callback_data: "unsold_stock" }
+]);
+  buttons.push([
 } else {
   buttons.push([{ text: "🔓 Redeem Key", callback_data: "redeem" }]);
   buttons.push([{ text: "📂 Accounts", callback_data: "accounts" }]); // <-- यूज़र के लिए भी
