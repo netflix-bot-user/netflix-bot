@@ -266,10 +266,11 @@ bot.on("callback_query", async (query) => {
 
   try {
     await db.query(
-      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
-       VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [key, months, expiry.toISOString(), false, key]
-    );
+  `INSERT INTO license_keys (key, duration, expires, used)
+   VALUES ($1, $2, $3, $4)
+   ON CONFLICT (key) DO NOTHING`,
+  [key, months, expiry.toISOString(), false]
+);
     console.log("DEBUG: Insert success");
   } catch (e) {
     console.error("DB Insert error in key generation:", e.message);
@@ -298,6 +299,16 @@ bot.on("callback_query", async (query) => {
         }
       });
     }
+
+// --- REDEEM KEY ---
+if (data === "redeem") {
+  if (isAdmin) return bot.sendMessage(chatId, "🚫 Admins cannot redeem keys.");
+  const ok = await isAuthorized(fromId);
+  if (ok) return bot.sendMessage(chatId, "✅ You already have membership.");
+
+  awaitingKey[chatId] = true;
+  return bot.sendMessage(chatId, "🔑 Please enter your license key:");
+}
 
     // --- ADD USER (admin flow) ---
     if (data === "add_user") {

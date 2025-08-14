@@ -266,10 +266,11 @@ bot.on("callback_query", async (query) => {
 
   try {
     await db.query(
-      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
-       VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [key, months, expiry.toISOString(), false, key]
-    );
+  `INSERT INTO license_keys (key, duration, expires, used)
+   VALUES ($1, $2, $3, $4)
+   ON CONFLICT (key) DO NOTHING`,
+  [key, months, expiry.toISOString(), false]
+);
     console.log("DEBUG: Insert success");
   } catch (e) {
     console.error("DB Insert error in key generation:", e.message);
@@ -391,12 +392,12 @@ bot.on("message", async (msg) => {
 
         try {
             const res = await db.query(
-                `SELECT * FROM license_keys 
-                 WHERE (license_key = $1 OR key_text = $1) 
-                 AND used = false
-                 AND (expires IS NULL OR expires > NOW())`,
-                [keyInput]
-            );
+  `SELECT * FROM license_keys 
+   WHERE key = $1
+   AND used = false
+   AND (expires IS NULL OR expires > NOW())`,
+  [keyInput]
+);
 
             if (res.rows.length === 0) {
                 delete awaitingKey[chatId];
