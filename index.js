@@ -227,21 +227,7 @@ bot.on("callback_query", async (query) => {
   const isAdmin = ADMIN_IDS.includes(fromId);
 
   try {
-    // --- GENERATE KEY (admin) ---
-    if (data === "genkey") {
-      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-      return bot.sendMessage(chatId, "Select key duration:", {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "1 Month", callback_data: "key_1" },
-            { text: "3 Months", callback_data: "key_3" },
-            { text: "6 Months", callback_data: "key_6" },
-            { text: "12 Months", callback_data: "key_12" }
-          ]]
-        }
-      });
-    }
-
+	  
     if (data.startsWith("key_")) {
   console.log("DEBUG: Key generation triggered with data =", data);
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
@@ -251,18 +237,19 @@ bot.on("callback_query", async (query) => {
   const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
   console.log("DEBUG: Generated key =", key);
 
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  console.log("DEBUG: Plan expiry date =", expiry);
+  const planExpiry = new Date();
+  planExpiry.setMonth(planExpiry.getMonth() + months);
+  console.log("DEBUG: Plan expiry date =", planExpiry);
 
-  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+  const activationDeadline = new Date();
+  activationDeadline.setHours(activationDeadline.getHours() + 48); // 48 hrs to activate
   console.log("DEBUG: Activation deadline =", activationDeadline);
 
   try {
     await db.query(
-      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
-       VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [key, months, expiry.toISOString(), false, key]
+      `INSERT INTO license_keys (key_text, duration_months, expires, used, created_at, license_key)
+       VALUES ($1, $2, $3, $4, NOW(), $1)`,
+      [key, months, planExpiry.toISOString(), false]
     );
     console.log("DEBUG: Insert success");
   } catch (e) {
@@ -270,7 +257,12 @@ bot.on("callback_query", async (query) => {
     return bot.sendMessage(chatId, "❌ DB error while generating key.");
   }
 
-  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
+  // ✅ Send key in monospace format
+  return bot.sendMessage(
+    chatId, 
+    `✅ Key generated: \`${key}\`\nValid for: ${months} month(s)\nActivate within 48 hours!`,
+    { parse_mode: "Markdown" }
+  );
 }
 
     // --- USERLIST (admin) ---
@@ -364,31 +356,47 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    // --- REDEEM KEY (user) ---
-    if (data === "redeem") {
-      await bot.sendMessage(chatId, "🔑 Please send your license key:");
-      bot.once("message", async (msg) => {
-        try {
-          if (!msg.text) return bot.sendMessage(chatId, "⚠️ Invalid input.");
-          const key = msg.text.trim();
-          const res = await db.query(`SELECT * FROM license_keys WHERE key = $1`, [key]);
-          if (res.rows.length === 0) return bot.sendMessage(chatId, "❌ Invalid key.");
-          const row = res.rows[0];
-          if (row.used) return bot.sendMessage(chatId, "⚠️ This key has already been used.");
+    // 🎯 Redeem Key Handler
+if (awaitingKey && msg.chat.id === awaitingKey.chatId) {
+    const keyInput = msg.text.trim();
+    console.log("DEBUG: Redeem request for key =", keyInput);
 
-          // Mark used and give authorized user
-          await db.query(`UPDATE license_keys SET used = true WHERE key = $1`, [key]);
-          // We'll set authorized_users with username and expires from the key
-          await saveAuthorizedUser(fromId, username, row.expires);
-          return bot.sendMessage(chatId, `✅ Key redeemed successfully!\nValid for: ${row.duration} month(s)\nExpires on: ${row.expires}`);
-        } catch (e) {
-          console.error("redeem handler error:", e.message);
-          return bot.sendMessage(chatId, "❌ Error processing key.");
+    try {
+        const res = await db.query(
+            `SELECT * FROM license_keys 
+             WHERE (license_key = $1 OR key_text = $1) 
+             AND used = false
+             AND (expires IS NULL OR expires > NOW())`,
+            [keyInput]
+        );
+
+        if (res.rows.length === 0) {
+            bot.sendMessage(chatId, "❌ Invalid or expired key.");
+            awaitingKey = null;
+            return;
         }
-      });
-      return;
+
+        const keyData = res.rows[0];
+
+        // ✅ Mark key as used
+        await db.query(
+            `UPDATE license_keys 
+             SET used = true, used_by = $1, used_at = NOW()
+             WHERE license_key = $2 OR key_text = $2`,
+            [chatId, keyInput]
+        );
+
+        // यहाँ तुम membership देने का logic डालो
+        bot.sendMessage(chatId, `✅ Key redeemed successfully! Membership activated for ${keyData.duration_months} month(s).`);
+
+        awaitingKey = null;
+
+    } catch (err) {
+        console.error("Redeem key error:", err);
+        bot.sendMessage(chatId, "⚠️ Error processing key.");
     }
-    
+}
+
 	// helper: escape text for HTML parse_mode
 function escapeHtml(text) {
   if (!text && text !== 0) return "";
