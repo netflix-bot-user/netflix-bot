@@ -230,54 +230,194 @@ bot.on("callback_query", async (query) => {
 
   try {
     // --- GENERATE KEY (admin) ---
-	if (data === "genkey") {
-  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-  return bot.sendMessage(chatId, "🗝️ Select key duration:", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "1 Month", callback_data: "key_1" },
-          { text: "3 Months", callback_data: "key_3" }
-        ],
-        [
-          { text: "6 Months", callback_data: "key_6" },
-          { text: "12 Months", callback_data: "key_12" }
-        ]
-      ]
-    }
-  });
+if (data === "genkey") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+    return bot.sendMessage(chatId, "🗝️ Select key duration:", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "1 Month", callback_data: "key_1" },
+                    { text: "3 Months", callback_data: "key_3" }
+                ],
+                [
+                    { text: "6 Months", callback_data: "key_6" },
+                    { text: "12 Months", callback_data: "key_12" }
+                ]
+            ]
+        }
+    });
 }
 
-    if (data.startsWith("key_")) {
-  console.log("DEBUG: Key generation triggered with data =", data);
-  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-  const months = parseInt(data.split("_")[1], 10);
-  console.log("DEBUG: Months parsed =", months);
+if (data.startsWith("key_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+    
+    const months = parseInt(data.split("_")[1], 10);
+    const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
 
-  const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-  console.log("DEBUG: Generated key =", key);
+    const expiry = new Date();
+    expiry.setMonth(expiry.getMonth() + months);
 
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  console.log("DEBUG: Plan expiry date =", expiry);
+    try {
+        await db.query(
+            `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
+             VALUES ($1, $2, $3, $4, NOW(), $5)`,
+            [key, months, expiry.toISOString(), false, key]
+        );
 
-  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
-  console.log("DEBUG: Activation deadline =", activationDeadline);
+        return bot.sendMessage(
+            chatId, 
+            `✅ Key generated: \`${key}\`\nValid for: ${months} month(s)\n⚠️ Must be activated before expiry date.`,
+            { parse_mode: "Markdown" }
+        );
 
-  try {
-    await db.query(
-  `INSERT INTO license_keys (key, duration, expires, used)
-   VALUES ($1, $2, $3, $4)
-   ON CONFLICT (key) DO NOTHING`,
-  [key, months, expiry.toISOString(), false]
-);
-    console.log("DEBUG: Insert success");
-  } catch (e) {
-    console.error("DB Insert error in key generation:", e.message);
-    return bot.sendMessage(chatId, "❌ DB error while generating key.");
-  }
+    } catch (e) {
+        console.error("DB Insert error in key generation:", e.message);
+        return bot.sendMessage(chatId, "❌ DB error while generating key.");
+    }
+}
 
-  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
+// 📮 UNSOLD STOCK LIST (Admin only)
+if (data === "unsold_stock") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+    const res = await db.query(`SELECT * FROM unsold_stock ORDER BY id ASC`);
+    if (res.rows.length === 0) {
+        return bot.sendMessage(chatId, "📭 No unsold stock available.", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "➕ Add to Unsold", callback_data: "add_unsold" }]
+                ]
+            }
+        });
+    }
+
+    let stockList = "📮 <b>Unsold Stock List</b>\n\n";
+    const buttons = [];
+
+    res.rows.forEach(row => {
+        stockList += `🆔 <b>${row.id}</b>\n📧 ${row.email}\n🔑 ${row.password}\n\n`;
+        buttons.push([
+            { text: `Sell ${row.id}`, callback_data: `sell_unsold_${row.id}` },
+            { text: `❌ Delete ${row.id}`, callback_data: `delete_unsold_${row.id}` }
+        ]);
+    });
+
+    // नीचे Add button
+    buttons.push([{ text: "➕ Add to Unsold", callback_data: "add_unsold" }]);
+
+    return bot.sendMessage(chatId, stockList, {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: buttons }
+    });
+}
+
+// 🛒 SELL UNSOLD STOCK - Step 1: Duration select
+if (data.startsWith("sell_unsold_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const stockId = data.split("_")[2];
+
+    return bot.sendMessage(chatId, "⏳ Select plan duration:", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "1 Month", callback_data: `sell_dur_${stockId}_1` },
+                    { text: "3 Months", callback_data: `sell_dur_${stockId}_3` }
+                ],
+                [
+                    { text: "6 Months", callback_data: `sell_dur_${stockId}_6` },
+                    { text: "12 Months", callback_data: `sell_dur_${stockId}_12` }
+                ]
+            ]
+        }
+    });
+}
+
+// Step 2: Ask buyer ID
+if (data.startsWith("sell_dur_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const parts = data.split("_");
+    const stockId = parts[2];
+    const months = parseInt(parts[3]);
+
+    bot.sendMessage(chatId, "📩 Send buyer's Telegram User ID:");
+
+    bot.once("message", async (msg) => {
+        const buyerId = msg.text.trim();
+        try {
+            // Get account from unsold_stock
+            const res = await db.query(`SELECT * FROM unsold_stock WHERE id = $1`, [stockId]);
+            if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ Stock not found.");
+
+            const { email, password } = res.rows[0];
+
+            // Buyer का username fetch करना
+            let buyerUsername = "";
+            try {
+                const buyerInfo = await bot.getChat(buyerId);
+                buyerUsername = buyerInfo.username || buyerInfo.first_name || "";
+            } catch (e) {
+                buyerUsername = "unknown";
+            }
+
+            // Expiry set करना
+            let expiry = new Date();
+            expiry.setMonth(expiry.getMonth() + months);
+
+            // Accounts में insert
+            await db.query(
+                `INSERT INTO accounts (email, password, buyer_id, expiry) VALUES ($1, $2, $3, $4)`,
+                [email, password, buyerId, expiry]
+            );
+
+            // Unsold से delete
+            await db.query(`DELETE FROM unsold_stock WHERE id = $1`, [stockId]);
+
+            // Seller को भेजना monospace format में
+            await bot.sendMessage(chatId,
+                "```\n📧 " + email + "\n🔑 " + password + "\n```",
+                { parse_mode: "Markdown" }
+            );
+
+            // Buyer को भी भेजना
+            await bot.sendMessage(buyerId,
+                "```\n📧 " + email + "\n🔑 " + password + "\n```",
+                { parse_mode: "Markdown" }
+            );
+
+            bot.sendMessage(chatId, `✅ Sold to @${buyerUsername} (ID: ${buyerId}) for ${months} month(s).`);
+
+        } catch (err) {
+            console.error("Sell flow error:", err.message);
+            bot.sendMessage(chatId, "❌ Error selling stock.");
+        }
+    });
+}
+
+// ❌ DELETE UNSOLD STOCK
+if (data.startsWith("delete_unsold_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const stockId = data.split("_")[2];
+
+    // Confirmation message
+    return bot.sendMessage(chatId, `⚠️ Are you sure you want to delete stock ID ${stockId}?`, {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "✅ Yes", callback_data: `confirm_del_unsold_${stockId}` },
+                    { text: "❌ No", callback_data: "unsold_stock" }
+                ]
+            ]
+        }
+    });
+}
+
+// Confirm delete
+if (data.startsWith("confirm_del_unsold_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const stockId = data.split("_")[3];
+
+    await db.query(`DELETE FROM unsold_stock WHERE id = $1`, [stockId]);
+    return bot.sendMessage(chatId, `🗑️ Stock ID ${stockId} deleted.`);
 }
 
     // --- USERLIST (admin) ---
