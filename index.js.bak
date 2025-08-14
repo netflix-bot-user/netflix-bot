@@ -227,21 +227,7 @@ bot.on("callback_query", async (query) => {
   const isAdmin = ADMIN_IDS.includes(fromId);
 
   try {
-    // --- GENERATE KEY (admin) ---
-    if (data === "genkey") {
-      if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
-      return bot.sendMessage(chatId, "Select key duration:", {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "1 Month", callback_data: "key_1" },
-            { text: "3 Months", callback_data: "key_3" },
-            { text: "6 Months", callback_data: "key_6" },
-            { text: "12 Months", callback_data: "key_12" }
-          ]]
-        }
-      });
-    }
-
+	  
     if (data.startsWith("key_")) {
   console.log("DEBUG: Key generation triggered with data =", data);
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
@@ -251,18 +237,19 @@ bot.on("callback_query", async (query) => {
   const key = "NETFLIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
   console.log("DEBUG: Generated key =", key);
 
-  const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + months);
-  console.log("DEBUG: Plan expiry date =", expiry);
+  const planExpiry = new Date();
+  planExpiry.setMonth(planExpiry.getMonth() + months);
+  console.log("DEBUG: Plan expiry date =", planExpiry);
 
-  const activationDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+  const activationDeadline = new Date();
+  activationDeadline.setHours(activationDeadline.getHours() + 48); // 48 hrs to activate
   console.log("DEBUG: Activation deadline =", activationDeadline);
 
   try {
     await db.query(
-      `INSERT INTO license_keys (license_key, duration_months, expires, used, created_at, key_text)
-       VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [key, months, expiry.toISOString(), false, key]
+      `INSERT INTO license_keys (key_text, duration_months, expires, used, created_at, license_key)
+       VALUES ($1, $2, $3, $4, NOW(), $1)`,
+      [key, months, planExpiry.toISOString(), false]
     );
     console.log("DEBUG: Insert success");
   } catch (e) {
@@ -270,7 +257,12 @@ bot.on("callback_query", async (query) => {
     return bot.sendMessage(chatId, "❌ DB error while generating key.");
   }
 
-  return bot.sendMessage(chatId, `✅ Key generated: ${key}\nValid for: ${months} month(s)\n⚠️ Must be activated within 48 hours`);
+  // ✅ Send key in monospace format
+  return bot.sendMessage(
+    chatId, 
+    `✅ Key generated: \`${key}\`\nValid for: ${months} month(s)\nActivate within 48 hours!`,
+    { parse_mode: "Markdown" }
+  );
 }
 
     // --- USERLIST (admin) ---
