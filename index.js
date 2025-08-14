@@ -228,6 +228,24 @@ bot.on("callback_query", async (query) => {
 
   try {
     // --- GENERATE KEY (admin) ---
+	if (data === "genkey") {
+  if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
+  return bot.sendMessage(chatId, "🗝️ Select key duration:", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "1 Month", callback_data: "key_1" },
+          { text: "3 Months", callback_data: "key_3" }
+        ],
+        [
+          { text: "6 Months", callback_data: "key_6" },
+          { text: "12 Months", callback_data: "key_12" }
+        ]
+      ]
+    }
+  });
+}
+
     if (data.startsWith("key_")) {
   console.log("DEBUG: Key generation triggered with data =", data);
   if (!isAdmin) return bot.sendMessage(chatId, "🚫 You are not admin.");
