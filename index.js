@@ -12,6 +12,8 @@ const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+// Channel where final (expiry-day) reminder should go
+const CHANNEL_ID = -1002852658558
 
 // In-memory pending maps for flows that require multi-step interaction
 const pendingUserAdd = {};   // adminId -> { id, uname }
@@ -54,6 +56,34 @@ await db.query(`
     expiry TIMESTAMP
   )
 `);
+
+// 🔄 Move expired accounts to Unsold Stock
+async function moveExpiredAccounts() {
+  try {
+    const expired = await db.query(
+      `SELECT * FROM accounts WHERE expiry < NOW()`
+    );
+
+    for (const acc of expired.rows) {
+      // Add to unsold_stock
+      await db.query(
+        `INSERT INTO unsold_stock (email, password) VALUES ($1, $2)`,
+        [acc.email, acc.password]
+      );
+
+      // Remove from accounts
+      await db.query(`DELETE FROM accounts WHERE id = $1`, [acc.id]);
+    }
+
+    if (expired.rows.length > 0) {
+      console.log(`Moved ${expired.rows.length} expired accounts to Unsold Stock`);
+    }
+  } catch (err) {
+    console.error("Error moving expired accounts:", err);
+  }
+}
+// Schedule expired accounts check every 24 hours
+setInterval(moveExpiredAccounts, 24 * 60 * 60 * 1000);
 
     // Migration from old JSON files if they exist
     try {
@@ -1034,29 +1064,47 @@ if (data === "remove_account") {
   }
 });
 
-// Daily check for accounts expiring tomorrow
+// ⏰ Daily expiry reminders (3 days, 2 days, 1 day before)
 setInterval(async () => {
   try {
-    // Find accounts expiring tomorrow
-    const res = await db.query(`
-      SELECT a.email, a.buyer_id, a.expiry, u.username
-      FROM accounts a
-      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
-      WHERE a.expiry::date = (CURRENT_DATE + INTERVAL '1 day')::date
-      AND a.buyer_id IS NOT NULL
-    `);
+    const reminders = [
+      { daysBefore: 3, channelAlert: false },
+      { daysBefore: 2, channelAlert: false },
+      { daysBefore: 1, channelAlert: true }
+    ];
 
-    for (const row of res.rows) {
-      const { email, buyer_id, expiry } = row;
-      const message = `⚠️ Your plan for ${email} will expire tomorrow (${new Date(expiry).toLocaleDateString()}). Please renew.`;
-      try {
-        await bot.sendMessage(buyer_id, message); // removed parse_mode to avoid Telegram entity errors
-      } catch (err) {
-        console.error(`❌ Failed to send expiry reminder to ${buyer_id}:`, err.message);
+    for (const { daysBefore, channelAlert } of reminders) {
+      const res = await db.query(`
+        SELECT a.email, a.buyer_id, a.expiry, u.username
+        FROM accounts a
+        LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+        WHERE a.expiry::date = (CURRENT_DATE + INTERVAL '${daysBefore} day')::date
+        AND a.buyer_id IS NOT NULL
+      `);
+
+      for (const row of res.rows) {
+        const { email, buyer_id, expiry } = row;
+        const message = `⚠️ Reminder: Your plan for *${email}* will expire in ${daysBefore} day(s) (${new Date(expiry).toLocaleDateString()}). Please renew to avoid interruption.`;
+
+        // Send to user
+        try {
+          await bot.sendMessage(buyer_id, message, { parse_mode: "Markdown" });
+        } catch (err) {
+          console.error(`❌ Failed to send reminder to ${buyer_id}:`, err.message);
+        }
+
+        // Send to channel if last day
+        if (channelAlert) {
+          try {
+            await bot.sendMessage(process.env.CHANNEL_ID, `📢 LAST REMINDER for @${row.username || "unknown"}\n${message}`, { parse_mode: "Markdown" });
+          } catch (err) {
+            console.error(`❌ Failed to send channel reminder:`, err.message);
+          }
+        }
       }
     }
   } catch (err) {
-    console.error("❌ Expiry check error:", err.message);
+    console.error("❌ Expiry reminder check error:", err.message);
   }
 }, 24 * 60 * 60 * 1000); // runs once every 24 hours
 
@@ -1078,3 +1126,9 @@ setInterval(async () => {
         console.error("Auto-move expired accounts error:", err.message);
     }
 }, 24 * 60 * 60 * 1000); // हर 24 घंटे में चलेगा
+
+// ⏳ Check expired accounts every 1 hour
+setInterval(moveExpiredAccounts, 60 * 60 * 1000);
+
+// First run at startup
+moveExpiredAccounts();
