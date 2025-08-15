@@ -297,6 +297,180 @@ if (data.startsWith("key_")) {
       });
     }
 
+// --- UNSOLD STOCK LIST (Admin) ---
+if (data === "unsold_stock") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+    try {
+        const res = await db.query(`SELECT * FROM unsold_stock ORDER BY id DESC`);
+        if (res.rows.length === 0) {
+            return bot.sendMessage(chatId, "📦 कोई भी unsold stock नहीं है।");
+        }
+
+        let messageText = "📦 *Unsold Stock List:*\n\n";
+        let keyboard = [];
+
+        res.rows.forEach((row, index) => {
+            messageText += `${index + 1}. 📧 ${row.email} | Exp: ${row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A"}\n`;
+
+            keyboard.push([
+                { text: "✅ Sell", callback_data: `sell_unsold_${row.id}` },
+                { text: "🗑 Delete", callback_data: `delete_unsold_${row.id}` }
+            ]);
+        });
+
+        bot.sendMessage(chatId, messageText, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard }
+        });
+
+    } catch (err) {
+        console.error("Unsold Stock Error:", err);
+        bot.sendMessage(chatId, "⚠️ Error fetching unsold stock.");
+    }
+    return;
+}
+
+// 🛒 SELL UNSOLD STOCK - Step 1: Duration select
+if (data.startsWith("sell_unsold_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const stockId = data.split("_")[2];
+
+    return bot.sendMessage(chatId, "⏳ Select plan duration:", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "1 Month", callback_data: `sell_dur_${stockId}_1` },
+                    { text: "3 Months", callback_data: `sell_dur_${stockId}_3` }
+                ],
+                [
+                    { text: "6 Months", callback_data: `sell_dur_${stockId}_6` },
+                    { text: "12 Months", callback_data: `sell_dur_${stockId}_12` }
+                ]
+            ]
+        }
+    });
+}
+
+// Step 2: Ask buyer ID
+if (data.startsWith("sell_dur_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const parts = data.split("_");
+    const stockId = parts[2];
+    const months = parseInt(parts[3]);
+
+    bot.sendMessage(chatId, "📩 Send buyer's Telegram User ID:");
+
+    bot.once("message", async (msg) => {
+        const buyerId = msg.text.trim();
+        try {
+            // Get account from unsold_stock
+            const res = await db.query(`SELECT * FROM unsold_stock WHERE id = $1`, [stockId]);
+            if (res.rows.length === 0) return bot.sendMessage(chatId, "⚠️ Stock not found.");
+
+            const { email, password } = res.rows[0];
+
+            // Buyer का username fetch करना
+            let buyerUsername = "";
+            try {
+                const buyerInfo = await bot.getChat(buyerId);
+                buyerUsername = buyerInfo.username || buyerInfo.first_name || "";
+            } catch (e) {
+                buyerUsername = "unknown";
+            }
+
+            // Expiry set करना
+            let expiry = new Date();
+            expiry.setMonth(expiry.getMonth() + months);
+
+            // Accounts में insert
+            await db.query(
+
+// 🗑 DELETE UNSOLD STOCK
+if (data.startsWith("delete_unsold_")) {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+    const stockId = data.split("_")[2];
+
+    try {
+        const res = await db.query(`DELETE FROM unsold_stock WHERE id = $1 RETURNING *`, [stockId]);
+        if (res.rows.length === 0) {
+            return bot.sendMessage(chatId, "⚠️ Stock not found or already deleted.");
+        }
+        bot.sendMessage(chatId, `🗑 Deleted unsold stock: ${res.rows[0].email}`);
+    } catch (err) {
+        console.error("Delete unsold stock error:", err.message);
+        bot.sendMessage(chatId, "❌ Error deleting stock.");
+    }
+    return;
+}
+
+// ➕ ADD TO UNSOLD STOCK
+if (data === "add_unsold") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+    bot.sendMessage(chatId, "📧 Send email for the new account:");
+
+    let step = 1;
+    let email = "";
+    let password = "";
+
+    const listener = async (msg) => {
+        if (msg.chat.id !== chatId) return;
+
+        if (step === 1) {
+            email = msg.text.trim();
+            step++;
+            return bot.sendMessage(chatId, "🔑 Send password for the new account:");
+        } 
+        else if (step === 2) {
+            password = msg.text.trim();
+            try {
+                await db.query(
+                    `INSERT INTO unsold_stock (email, password) VALUES ($1, $2)`,
+                    [email, password]
+                );
+                bot.sendMessage(chatId, `✅ Added to Unsold Stock:\n📧 ${email}\n🔑 ${password}`);
+            } catch (err) {
+                console.error("Add unsold stock error:", err.message);
+                bot.sendMessage(chatId, "❌ Error adding unsold stock.");
+            }
+            bot.removeListener("message", listener);
+        }
+    };
+
+    bot.on("message", listener);
+}
+
+// 📦 UNSOLD STOCK LIST
+if (data === "unsold_stock") {
+    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
+
+    try {
+        const res = await db.query(`SELECT * FROM unsold_stock ORDER BY id ASC`);
+        if (res.rows.length === 0) {
+            return bot.sendMessage(chatId, "📭 No unsold stock available.");
+        }
+
+        for (const stock of res.rows) {
+            const text = `📧 ${stock.email}\n🔑 ${stock.password}`;
+            const buttons = [
+                [
+                    { text: "💰 Sell", callback_data: `sell_unsold_${stock.id}` },
+                    { text: "🗑 Delete", callback_data: `delete_unsold_${stock.id}` }
+                ]
+            ];
+
+            await bot.sendMessage(chatId, text, {
+                reply_markup: { inline_keyboard: buttons }
+            });
+        }
+    } catch (err) {
+        console.error("Unsold stock list error:", err.message);
+        bot.sendMessage(chatId, "❌ Error fetching unsold stock.");
+    }
+    return;
+}
+
 // --- REDEEM KEY ---
 if (data === "redeem") {
   if (isAdmin) return bot.sendMessage(chatId, "🚫 Admins cannot redeem keys.");
@@ -880,3 +1054,21 @@ setInterval(async () => {
   }
 }, 24 * 60 * 60 * 1000); // runs once every 24 hours
 
+// 🔄 Auto-move expired accounts to Unsold Stock (runs every day)
+setInterval(async () => {
+    try {
+        const res = await db.query(`SELECT * FROM accounts WHERE expiry < NOW()`);
+        if (res.rows.length === 0) return;
+
+        for (const acc of res.rows) {
+            await db.query(
+                `INSERT INTO unsold_stock (email, password) VALUES ($1, $2)`,
+                [acc.email, acc.password]
+            );
+            await db.query(`DELETE FROM accounts WHERE id = $1`, [acc.id]);
+            console.log(`♻️ Moved expired account ${acc.email} to Unsold Stock`);
+        }
+    } catch (err) {
+        console.error("Auto-move expired accounts error:", err.message);
+    }
+}, 24 * 60 * 60 * 1000); // हर 24 घंटे में चलेगा

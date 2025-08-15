@@ -385,6 +385,33 @@ if (data.startsWith("sell_dur_")) {
 
             // Accounts में insert
             await db.query(
+                `INSERT INTO accounts (email, password, buyer_id, expiry) VALUES ($1, $2, $3, $4)`,
+                [email, password, buyerId, expiry]
+            );
+
+            // Unsold से delete
+            await db.query(`DELETE FROM unsold_stock WHERE id = $1`, [stockId]);
+
+            // Seller को भेजना monospace format में
+            await bot.sendMessage(chatId,
+                "```\n📧 " + email + "\n🔑 " + password + "\n```",
+                { parse_mode: "Markdown" }
+            );
+
+            // Buyer को भी भेजना
+            await bot.sendMessage(buyerId,
+                "```\n📧 " + email + "\n🔑 " + password + "\n```",
+                { parse_mode: "Markdown" }
+            );
+
+            bot.sendMessage(chatId, `✅ Sold to @${buyerUsername} (ID: ${buyerId}) for ${months} month(s).`);
+
+        } catch (err) {
+            console.error("Sell flow error:", err.message);
+            bot.sendMessage(chatId, "❌ Error selling stock.");
+        }
+    });
+}
 
 // 🗑 DELETE UNSOLD STOCK
 if (data.startsWith("delete_unsold_")) {
@@ -439,36 +466,6 @@ if (data === "add_unsold") {
     };
 
     bot.on("message", listener);
-}
-
-// 📦 UNSOLD STOCK LIST
-if (data === "unsold_stock") {
-    if (!isAdmin) return bot.sendMessage(chatId, "🚫 Admin only.");
-
-    try {
-        const res = await db.query(`SELECT * FROM unsold_stock ORDER BY id ASC`);
-        if (res.rows.length === 0) {
-            return bot.sendMessage(chatId, "📭 No unsold stock available.");
-        }
-
-        for (const stock of res.rows) {
-            const text = `📧 ${stock.email}\n🔑 ${stock.password}`;
-            const buttons = [
-                [
-                    { text: "💰 Sell", callback_data: `sell_unsold_${stock.id}` },
-                    { text: "🗑 Delete", callback_data: `delete_unsold_${stock.id}` }
-                ]
-            ];
-
-            await bot.sendMessage(chatId, text, {
-                reply_markup: { inline_keyboard: buttons }
-            });
-        }
-    } catch (err) {
-        console.error("Unsold stock list error:", err.message);
-        bot.sendMessage(chatId, "❌ Error fetching unsold stock.");
-    }
-    return;
 }
 
 // --- REDEEM KEY ---
