@@ -304,7 +304,13 @@ if (data === "unsold_stock") {
     try {
         const res = await db.query(`SELECT * FROM unsold_stock ORDER BY id DESC`);
         if (res.rows.length === 0) {
-            return bot.sendMessage(chatId, "📦 कोई भी unsold stock नहीं है।");
+            return bot.sendMessage(chatId, "📦 No unsold stock available.\n\nClick below to add new stock.", {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "➕ Add to Unsold", callback_data: "add_unsold" }]
+                    ]
+                }
+            });
         }
 
         let messageText = "📦 *Unsold Stock List:*\n\n";
@@ -318,6 +324,9 @@ if (data === "unsold_stock") {
                 { text: "🗑 Delete", callback_data: `delete_unsold_${row.id}` }
             ]);
         });
+
+        // Add "Add to Unsold" button at the bottom
+        keyboard.push([{ text: "➕ Add to Unsold", callback_data: "add_unsold" }]);
 
         bot.sendMessage(chatId, messageText, {
             parse_mode: "Markdown",
