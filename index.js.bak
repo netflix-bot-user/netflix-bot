@@ -12,8 +12,6 @@ const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
-// Channel where final (expiry-day) reminder should go
-const CHANNEL_ID = -1002852658558
 
 // In-memory pending maps for flows that require multi-step interaction
 const pendingUserAdd = {};   // adminId -> { id, uname }
@@ -82,6 +80,50 @@ async function moveExpiredAccounts() {
     console.error("Error moving expired accounts:", err);
   }
 }
+
+// 📢 Send expiry reminders (3 days, 2 days, 1 day before expiry)
+async function sendExpiryReminders() {
+  try {
+    const res = await db.query(`
+      SELECT a.email, a.buyer_id, a.expiry, u.username
+      FROM accounts a
+      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+      WHERE a.expiry::date IN (
+        (CURRENT_DATE + INTERVAL '1 day')::date,
+        (CURRENT_DATE + INTERVAL '2 day')::date,
+        (CURRENT_DATE + INTERVAL '3 day')::date
+      )
+      AND a.buyer_id IS NOT NULL
+    `);
+
+    for (const row of res.rows) {
+      const { email, buyer_id, expiry } = row;
+      const daysLeft = Math.ceil((new Date(expiry) - new Date()) / (1000 * 60 * 60 * 24));
+
+      let message = `⚠️ Reminder: Your plan for *${email}* will expire in ${daysLeft} day(s) (${new Date(expiry).toLocaleDateString()}). Please renew.`;
+
+      try {
+        // Send reminder to user
+        await bot.sendMessage(buyer_id, message, { parse_mode: "Markdown" });
+
+        // If only 1 day left → also send to channel
+        if (daysLeft === 1) {
+          await bot.sendMessage(process.env.CHANNEL_ID, `📢 Last Reminder!\n${message}`, { parse_mode: "Markdown" });
+        }
+      } catch (err) {
+        console.error(`❌ Failed to send reminder to ${buyer_id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("❌ Expiry reminder error:", err.message);
+  }
+}
+
+// ⏰ Run expired account mover daily (every 24h)
+setInterval(moveExpiredAccounts, 24 * 60 * 60 * 1000);
+
+// ✅ Run expiry reminders daily (every 24h)
+setInterval(sendExpiryReminders, 24 * 60 * 60 * 1000);
 
     // Migration from old JSON files if they exist
     try {
@@ -1062,49 +1104,42 @@ if (data === "remove_account") {
   }
 });
 
-// ⏰ Daily expiry reminders (3 days, 2 days, 1 day before)
+// 🔔 Expiry Reminder System
 setInterval(async () => {
   try {
-    const reminders = [
-      { daysBefore: 3, channelAlert: false },
-      { daysBefore: 2, channelAlert: false },
-      { daysBefore: 1, channelAlert: true }
-    ];
+    const res = await db.query(`
+      SELECT a.email, a.buyer_id, a.expiry, u.username
+      FROM accounts a
+      LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
+      WHERE a.expiry::date IN (
+        (CURRENT_DATE + INTERVAL '3 day')::date,
+        (CURRENT_DATE + INTERVAL '2 day')::date,
+        (CURRENT_DATE + INTERVAL '1 day')::date
+      )
+      AND a.buyer_id IS NOT NULL
+    `);
 
-    for (const { daysBefore, channelAlert } of reminders) {
-      const res = await db.query(`
-        SELECT a.email, a.buyer_id, a.expiry, u.username
-        FROM accounts a
-        LEFT JOIN authorized_users u ON a.buyer_id = u.user_id
-        WHERE a.expiry::date = (CURRENT_DATE + INTERVAL '${daysBefore} day')::date
-        AND a.buyer_id IS NOT NULL
-      `);
+    for (const row of res.rows) {
+      const { email, buyer_id, expiry } = row;
+      const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
 
-      for (const row of res.rows) {
-        const { email, buyer_id, expiry } = row;
-        const message = `⚠️ Reminder: Your plan for *${email}* will expire in ${daysBefore} day(s) (${new Date(expiry).toLocaleDateString()}). Please renew to avoid interruption.`;
+      let message = `⚠️ Reminder: Your plan for ${email} will expire in ${daysLeft} day(s) (${new Date(expiry).toLocaleDateString()}). Please renew.`;
 
-        // Send to user
-        try {
-          await bot.sendMessage(buyer_id, message, { parse_mode: "Markdown" });
-        } catch (err) {
-          console.error(`❌ Failed to send reminder to ${buyer_id}:`, err.message);
+      try {
+        await bot.sendMessage(buyer_id, message);
+
+        // अगर 1 दिन बचा है तो channel पर भी भेजो
+        if (daysLeft === 1) {
+          await bot.sendMessage(process.env.CHANNEL_ID, `🔔 Reminder for @${row.username || buyer_id}\n${message}`);
         }
-
-        // Send to channel if last day
-        if (channelAlert) {
-          try {
-            await bot.sendMessage(process.env.CHANNEL_ID, `📢 LAST REMINDER for @${row.username || "unknown"}\n${message}`, { parse_mode: "Markdown" });
-          } catch (err) {
-            console.error(`❌ Failed to send channel reminder:`, err.message);
-          }
-        }
+      } catch (err) {
+        console.error(`❌ Failed to send reminder to ${buyer_id}:`, err.message);
       }
     }
   } catch (err) {
-    console.error("❌ Expiry reminder check error:", err.message);
+    console.error("❌ Expiry reminder error:", err.message);
   }
-}, 24 * 60 * 60 * 1000); // runs once every 24 hours
+}, 24 * 60 * 60 * 1000); // रोज़ाना 1 बार चलेगा
 
 // 🔄 Auto-move expired accounts to Unsold Stock (runs every day)
 setInterval(async () => {
@@ -1124,9 +1159,3 @@ setInterval(async () => {
         console.error("Auto-move expired accounts error:", err.message);
     }
 }, 24 * 60 * 60 * 1000); // हर 24 घंटे में चलेगा
-
-// ⏳ Check expired accounts every 1 hour
-setInterval(moveExpiredAccounts, 60 * 60 * 1000);
-
-// First run at startup
-moveExpiredAccounts();
