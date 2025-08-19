@@ -699,6 +699,11 @@ function escapeHtml(text) {
 
 // 📂 Accounts main view
 if (data === "accounts") {
+  const ok = await isAuthorized(fromId);
+  if (!ok && !isAdmin) {
+    return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+  }
+
   try {
     if (isAdmin) {
       const res = await db.query(`
@@ -906,12 +911,17 @@ if (data === "remove_account") {
       return bot.sendMessage(chatId, "🗑️ Gmail deleted.");
     }
 
-    // --- RESET PASS (both user and admin can press) ---
-    if (data === "resetpass") {
-      const info = await getGmail(fromId);
-      if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
-      const { email, password } = info;
-      bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
+    // --- RESET PASS (only for authorized users + admins) ---
+if (data === "resetpass") {
+  const ok = await isAuthorized(fromId);
+  if (!ok && !isAdmin) {
+    return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+  }
+
+  const info = await getGmail(fromId);
+  if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+  const { email, password } = info;
+  bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
 
       const imap = new Imap({
         user: email,
