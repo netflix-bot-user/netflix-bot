@@ -1133,7 +1133,7 @@ if (data === "household") {
       // last 24h + subject hints for both flows
       const searchCriteria = [
         ["FROM", "Netflix"],
-        ["SINCE", new Date(Date.now() - 15 * 60 * 60 * 1000)],
+        ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
         ["OR",
           ["SUBJECT", "Household"],
           ["OR", ["SUBJECT", "temporary"], ["SUBJECT", "access code"]]
@@ -1176,14 +1176,13 @@ if (data === "household") {
                   );
 
                 if (householdLinks.length) {
-  const uniq = [...new Set(householdLinks)];  // duplicate links remove
-  await bot.sendMessage(
-    chatId,
-    "🏠 Netflix Household Links:\n" + uniq.join("\n\n")  // sab links ek saath bhejna
-  );
-} else {
-  await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
-}
+                  const uniq = [...new Set(householdLinks)];
+                  for (const link of uniq) {
+                    await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
+                  }
+                } else {
+                  await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
+                }
               } catch (e) {
                 console.error("Household parse error:", e.message);
                 await bot.sendMessage(chatId, "❌ Error reading household email.");
