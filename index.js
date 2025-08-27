@@ -1096,7 +1096,7 @@ if (data === "signin") {
 
 // --- HOUSEHOLD (new logic like reset) ---
 if (data === "household") {
-  console.log("➡ Household logic entered successfully");
+ // console.log("➡ Household logic entered successfully");
   //bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
 
   if (!isAdmin) {
@@ -1157,7 +1157,7 @@ if (data === "household") {
 
                 // Extract all Netflix links
                 const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
-                console.log("🔗 Extracted Netflix links:", allLinks);
+               // console.log("🔗 Extracted Netflix links:", allLinks);
 
                 // Filter only "Yes. This Was Me" or "Get Code"
                 const householdLinks = allLinks.filter(
@@ -1166,7 +1166,7 @@ if (data === "household") {
                     decoded.toLowerCase().includes("get code") && link.toLowerCase().includes("code")
                 );
 
-                console.log("✅ Filtered household links:", householdLinks);
+               // console.log("✅ Filtered household links:", householdLinks);
 
                 if (householdLinks.length > 0) {
                   for (let link of householdLinks) {

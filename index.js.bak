@@ -302,7 +302,7 @@ bot.on("callback_query", async (query) => {
   const isAdmin = ADMIN_IDS.includes(fromId);
   
 console.log("📥 Callback received:", data);
-await bot.sendMessage(chatId, `📥 Callback received: ${data}`);
+//await bot.sendMessage(chatId, `📥 Callback received: ${data}`);
 
   try {
     // --- GENERATE KEY (admin) ---
@@ -1097,7 +1097,7 @@ if (data === "signin") {
 // --- HOUSEHOLD (new logic like reset) ---
 if (data === "household") {
   console.log("➡ Household logic entered successfully");
-  bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
+  //bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
 
   if (!isAdmin) {
     const ok = await isAuthorized(fromId);
