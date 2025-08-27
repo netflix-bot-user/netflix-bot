@@ -699,6 +699,11 @@ function escapeHtml(text) {
 
 // 📂 Accounts main view
 if (data === "accounts") {
+  const ok = await isAuthorized(fromId);
+  if (!ok && !isAdmin) {
+    return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+  }
+
   try {
     if (isAdmin) {
       const res = await db.query(`
