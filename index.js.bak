@@ -997,7 +997,7 @@ if (data === "resetpass") {
     }
 
     // --- SIGNIN (OTP) & HOUSEHOLD (both look for specific content) ---
-    if (data === "signin" || data === "household") {
+    if (data === "signin" | {
       if (!isAdmin) {
         // For signin/household, normal users must be authorized
         const ok = await isAuthorized(fromId);
@@ -1063,21 +1063,103 @@ if (data === "resetpass") {
                     }
                   }
 
-                  if (data === "household" && !responded) {
-                    const linkMatch = body.match(/https:\/\/www\.netflix\.com\/accountaccess[^\s]+/);
-                    if (linkMatch) {
-                      responded = true;
-                      return bot.sendMessage(chatId, `Hi @${username},\n🏠 Netflix Link:\n${linkMatch[0]}`);
-                    }
+                  // --- HOUSEHOLD (new logic like reset, with full phrases) ---
+if (data === "household") {
+  if (!isAdmin) {
+    const ok = await isAuthorized(fromId);
+    if (!ok) {
+      return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+    }
+  }
 
-                    if (!responded && parsed.html && parsed.html.includes("Get Code")) {
-                      const buttonMatch = parsed.html.match(/<a[^>]*href=["']([^"']+)["'][^>]*>\s*Get Code\s*<\/a>/i);
-                      if (buttonMatch && buttonMatch[1]) {
-                        responded = true;
-                        return bot.sendMessage(chatId, `Hi @${username},\n🔗 Get Code link:\n${buttonMatch[1]}`);
-                      }
-                    }
+  const info = await getGmail(fromId);
+  if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+  const { email, password } = info;
+
+  bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
+
+  const imap = new Imap({
+    user: email,
+    password,
+    host: "imap.gmail.com",
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false },
+  });
+
+  imap.once("ready", function () {
+    imap.openBox("INBOX", false, function (err, box) {
+      if (err) {
+        bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
+        imap.end();
+        return;
+      }
+
+      // 🔎 Search last 15 minutes, subject contains "Household" OR "temporary"
+      const searchCriteria = [
+        ["FROM", "Netflix"],
+        ["SINCE", new Date(Date.now() - 15 * 60 * 1000)],
+        ["OR", ["SUBJECT", "Household"], ["SUBJECT", "temporary"]]
+      ];
+      const fetchOptions = { bodies: "", markSeen: true };
+
+      imap.search(searchCriteria, function (err, results) {
+        if (err || results.length === 0) {
+          bot.sendMessage(chatId, "❌ No recent household email found.");
+          imap.end();
+          return;
+        }
+
+        const latest = results[results.length - 1];
+        const f = imap.fetch(latest, fetchOptions);
+
+        f.on("message", function (msgFetch) {
+          let rawEmail = "";
+          msgFetch.on("body", function (stream) {
+            stream.on("data", chunk => rawEmail += chunk.toString("utf8"));
+            stream.on("end", function () {
+              try {
+                const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
+
+                // 🔗 Extract all Netflix links
+                const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
+
+                // ✅ Filter only links related to full phrases
+                const householdLinks = allLinks.filter(link =>
+                  decoded.toLowerCase().includes("yes. this was me") && link.toLowerCase().includes("yes") ||
+                  decoded.toLowerCase().includes("get code") && link.toLowerCase().includes("code")
+                );
+
+                if (householdLinks.length > 0) {
+                  for (let link of householdLinks) {
+                    bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
                   }
+                } else {
+                  bot.sendMessage(chatId, "❌ No household link found in this mail.");
+                }
+              } catch (e) {
+                console.error("household parse error:", e.message);
+                bot.sendMessage(chatId, "❌ Error reading household email.");
+              }
+              imap.end();
+            });
+          });
+        });
+
+        f.once("error", err => {
+          bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
+        });
+      });
+    });
+  });
+
+  imap.once("error", function (err) {
+    bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
+  });
+
+  imap.connect();
+  return;
+}
 
                   if (!responded) {
                     responded = true;
