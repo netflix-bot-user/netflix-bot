@@ -1063,20 +1063,28 @@ if (data === "resetpass") {
                     }
                   }
 
-                  // --- HOUSEHOLD (new logic like reset, with full phrases) ---
+// --- HOUSEHOLD (new logic with debug logs) ---
 if (data === "household") {
+  console.log("➡️ Household button pressed by user:", fromId);
+  bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
+
   if (!isAdmin) {
     const ok = await isAuthorized(fromId);
     if (!ok) {
+      console.log("❌ Unauthorized user tried household:", fromId);
       return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
     }
   }
 
   const info = await getGmail(fromId);
-  if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
-  const { email, password } = info;
+  if (!info) {
+    console.log("⚠️ No Gmail found for user:", fromId);
+    return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+  }
 
-  bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
+  const { email, password } = info;
+  console.log("📧 Gmail info loaded for household:", email);
+  bot.sendMessage(chatId, "⏳ Reading Gmail inbox for Household mail...");
 
   const imap = new Imap({
     user: email,
@@ -1090,55 +1098,69 @@ if (data === "household") {
   imap.once("ready", function () {
     imap.openBox("INBOX", false, function (err, box) {
       if (err) {
+        console.error("❌ INBOX error:", err.message);
         bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
         imap.end();
         return;
       }
 
-      // 🔎 Search last 15 minutes, subject contains "Household" OR "temporary"
+      // For testing: search last 24 hours (not just 15 minutes)
       const searchCriteria = [
         ["FROM", "Netflix"],
-        ["SINCE", new Date(Date.now() - 15 * 60 * 1000)],
-        ["OR", ["SUBJECT", "Household"], ["SUBJECT", "temporary"]]
+        ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
+        ["OR", ["SUBJECT", "Household"], ["SUBJECT", "temporary"]],
       ];
       const fetchOptions = { bodies: "", markSeen: true };
 
       imap.search(searchCriteria, function (err, results) {
-        if (err || results.length === 0) {
-          bot.sendMessage(chatId, "❌ No recent household email found.");
+        if (err) {
+          console.error("❌ IMAP search error:", err.message);
+          bot.sendMessage(chatId, "❌ Error searching Household mails.");
+          imap.end();
+          return;
+        }
+
+        console.log("📊 IMAP search results:", results);
+        if (results.length === 0) {
+          bot.sendMessage(chatId, "❌ No recent Household mail found from Netflix.");
           imap.end();
           return;
         }
 
         const latest = results[results.length - 1];
-        const f = imap.fetch(latest, fetchOptions);
+        console.log("📨 Fetching mail id:", latest);
 
+        const f = imap.fetch(latest, fetchOptions);
         f.on("message", function (msgFetch) {
           let rawEmail = "";
           msgFetch.on("body", function (stream) {
-            stream.on("data", chunk => rawEmail += chunk.toString("utf8"));
+            stream.on("data", (chunk) => (rawEmail += chunk.toString("utf8")));
             stream.on("end", function () {
               try {
                 const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
 
-                // 🔗 Extract all Netflix links
+                // Extract all Netflix links
                 const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
+                console.log("🔗 Extracted Netflix links:", allLinks);
 
-                // ✅ Filter only links related to full phrases
-                const householdLinks = allLinks.filter(link =>
-                  decoded.toLowerCase().includes("yes. this was me") && link.toLowerCase().includes("yes") ||
-                  decoded.toLowerCase().includes("get code") && link.toLowerCase().includes("code")
+                // Filter only "Yes. This Was Me" or "Get Code"
+                const householdLinks = allLinks.filter(
+                  (link) =>
+                    decoded.toLowerCase().includes("yes. this was me") && link.toLowerCase().includes("yes") ||
+                    decoded.toLowerCase().includes("get code") && link.toLowerCase().includes("code")
                 );
+
+                console.log("✅ Filtered household links:", householdLinks);
 
                 if (householdLinks.length > 0) {
                   for (let link of householdLinks) {
                     bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
                   }
                 } else {
-                  bot.sendMessage(chatId, "❌ No household link found in this mail.");
+                  bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
                 }
               } catch (e) {
-                console.error("household parse error:", e.message);
+                console.error("❌ Household parse error:", e.message);
                 bot.sendMessage(chatId, "❌ Error reading household email.");
               }
               imap.end();
@@ -1146,7 +1168,8 @@ if (data === "household") {
           });
         });
 
-        f.once("error", err => {
+        f.once("error", (err) => {
+          console.error("❌ Fetch Error:", err.message);
           bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
         });
       });
@@ -1154,6 +1177,7 @@ if (data === "household") {
   });
 
   imap.once("error", function (err) {
+    console.error("❌ IMAP Error:", err.message);
     bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
   });
 

@@ -300,6 +300,9 @@ bot.on("callback_query", async (query) => {
   const username = query.from.username || query.from.first_name;
   const data = query.data;
   const isAdmin = ADMIN_IDS.includes(fromId);
+  
+console.log("📥 Callback received:", data);
+await bot.sendMessage(chatId, `📥 Callback received: ${data}`);
 
   try {
     // --- GENERATE KEY (admin) ---
