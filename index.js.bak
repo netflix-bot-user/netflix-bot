@@ -1068,9 +1068,11 @@ if (data === "resetpass") {
 
 // --- HOUSEHOLD (new logic with debug logs) ---
 if (data === "household") {
-  console.log("➡️ Household button pressed by user:", fromId);
-  bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
-
+	
+   // ✅ Debug line (पहली लाइन)
+  console.log("➡ Household logic entered successfully");
+  bot.sendMessage(chatId, "➡ Household logic entered successfully");
+  
   if (!isAdmin) {
     const ok = await isAuthorized(fromId);
     if (!ok) {
