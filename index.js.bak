@@ -1133,7 +1133,7 @@ if (data === "household") {
       // last 24h + subject hints for both flows
       const searchCriteria = [
         ["FROM", "Netflix"],
-        ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
+        ["SINCE", new Date(Date.now() - 15 * 60 * 1000)],
         ["OR",
           ["SUBJECT", "Household"],
           ["OR", ["SUBJECT", "temporary"], ["SUBJECT", "access code"]]
