@@ -997,7 +997,7 @@ if (data === "resetpass") {
     }
 
     // --- SIGNIN (OTP) & HOUSEHOLD (both look for specific content) ---
-    if (data === "signin" {
+    if (data === "signin") {
       if (!isAdmin) {
         // For signin/household, normal users must be authorized
         const ok = await isAuthorized(fromId);
