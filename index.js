@@ -1201,34 +1201,6 @@ if (data === "household") {
   return;
 }
 
-                  if (!responded) {
-                    responded = true;
-                    bot.sendMessage(chatId, "❌ No valid Netflix info found.");
-                  }
-                  imap.end();
-                });
-              });
-            });
-
-            f.once("error", function (err) {
-              bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
-              imap.end();
-            });
-
-            f.once("end", function () {
-              // no-op
-            });
-          });
-        });
-      });
-
-      imap.once("error", function (err) {
-        bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
-      });
-
-      imap.connect();
-      return;
-    }
 
     // Unknown callback: ignore or ack
     return;

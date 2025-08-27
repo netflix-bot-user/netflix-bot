@@ -999,96 +999,117 @@ if (data === "resetpass") {
       return;
     }
 
-    // --- SIGNIN (OTP) & HOUSEHOLD (both look for specific content) ---
-    if (data === "signin") {
-      if (!isAdmin) {
-        // For signin/household, normal users must be authorized
-        const ok = await isAuthorized(fromId);
-        if (!ok) {
-          return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
-        }
-      }
-
-      const info = await getGmail(fromId);
-      if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
-
-      const { email, password } = info;
-      bot.sendMessage(chatId, "⏳ Reading Gmail inbox...");
-
-      const imap = new Imap({
-        user: email,
-        password,
-        host: "imap.gmail.com",
-        port: 993,
-        tls: true,
-        tlsOptions: { rejectUnauthorized: false },
-      });
-
-      imap.once("ready", function () {
-        imap.openBox("INBOX", false, function (err, box) {
-          if (err) {
-            bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
-            imap.end();
-            return;
-          }
-
-          const searchCriteria = [["FROM", "Netflix"], ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)]];
-          const fetchOptions = { bodies: ["HEADER", "TEXT"], struct: true };
-
-          imap.search(searchCriteria, function (err, results) {
-            if (err || results.length === 0) {
-              bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
-              imap.end();
-              return;
-            }
-
-            const latest = results[results.length - 1];
-            const f = imap.fetch(latest, fetchOptions);
-            let responded = false;
-
-            f.on("message", function (msgFetch) {
-              msgFetch.on("body", function (stream) {
-                simpleParser(stream, async (err, parsed) => {
-                  if (err) {
-                    bot.sendMessage(chatId, "❌ Error reading email.");
-                    responded = true;
-                    imap.end();
-                    return;
-                  }
-
-                  const body = parsed.text || "";
-
-                  if (data === "signin" && !responded && body.toLowerCase().includes("sign in to netflix")) {
-                    const codeMatch = body.match(/\b\d{4}\b/);
-                    if (codeMatch) {
-                      responded = true;
-                      bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: ${codeMatch[0]}`);
-                    }
-                  }
-
-// --- HOUSEHOLD (new logic with debug logs) ---
-if (data === "household") {
-	
-   // ✅ Debug line (पहली लाइन)
-  console.log("➡ Household logic entered successfully");
-  bot.sendMessage(chatId, "➡ Household logic entered successfully");
-  
+    // --- SIGNIN (OTP) ---
+if (data === "signin") {
   if (!isAdmin) {
     const ok = await isAuthorized(fromId);
     if (!ok) {
-      console.log("❌ Unauthorized user tried household:", fromId);
       return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
     }
   }
 
   const info = await getGmail(fromId);
-  if (!info) {
-    console.log("⚠️ No Gmail found for user:", fromId);
-    return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+  if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
+  const { email, password } = info;
+
+  bot.sendMessage(chatId, "⏳ Reading Gmail inbox for Signin OTP...");
+
+  const imap = new Imap({
+    user: email,
+    password,
+    host: "imap.gmail.com",
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false },
+  });
+
+  imap.once("ready", function () {
+    imap.openBox("INBOX", false, function (err, box) {
+      if (err) {
+        bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
+        imap.end();
+        return;
+      }
+
+      const searchCriteria = [
+        ["FROM", "Netflix"],
+        ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
+      ];
+      const fetchOptions = { bodies: ["HEADER", "TEXT"], struct: true };
+
+      imap.search(searchCriteria, function (err, results) {
+        if (err || results.length === 0) {
+          bot.sendMessage(chatId, "❌ No recent emails found from Netflix.");
+          imap.end();
+          return;
+        }
+
+        const latest = results[results.length - 1];
+        const f = imap.fetch(latest, fetchOptions);
+        let responded = false;
+
+        f.on("message", function (msgFetch) {
+          msgFetch.on("body", function (stream) {
+            simpleParser(stream, async (err, parsed) => {
+              if (err) {
+                bot.sendMessage(chatId, "❌ Error reading email.");
+                responded = true;
+                imap.end();
+                return;
+              }
+
+              const body = parsed.text || "";
+
+              if (!responded && body.toLowerCase().includes("sign in to netflix")) {
+                const codeMatch = body.match(/\b\d{4}\b/);
+                if (codeMatch) {
+                  responded = true;
+                  bot.sendMessage(chatId, `Hi @${username},\n🔐 Your Netflix OTP is: ${codeMatch[0]}`);
+                }
+              }
+
+              if (!responded) {
+                responded = true;
+                bot.sendMessage(chatId, "❌ No valid Netflix OTP found.");
+              }
+
+              imap.end();
+            });
+          });
+        });
+
+        f.once("error", function (err) {
+          bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
+          imap.end();
+        });
+      });
+    });
+  });
+
+  imap.once("error", function (err) {
+    bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
+  });
+
+  imap.connect();
+  return;
+}
+
+// --- HOUSEHOLD (new logic like reset) ---
+if (data === "household") {
+  console.log("➡ Household logic entered successfully");
+  bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
+
+  if (!isAdmin) {
+    const ok = await isAuthorized(fromId);
+    if (!ok) {
+      return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+    }
   }
 
+  const info = await getGmail(fromId);
+  if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
   const { email, password } = info;
-  console.log("📧 Gmail info loaded for household:", email);
+
   bot.sendMessage(chatId, "⏳ Reading Gmail inbox for Household mail...");
 
   const imap = new Imap({
@@ -1103,13 +1124,12 @@ if (data === "household") {
   imap.once("ready", function () {
     imap.openBox("INBOX", false, function (err, box) {
       if (err) {
-        console.error("❌ INBOX error:", err.message);
         bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
         imap.end();
         return;
       }
 
-      // For testing: search last 24 hours (not just 15 minutes)
+      // Search last 24 hours (Household or temporary subject)
       const searchCriteria = [
         ["FROM", "Netflix"],
         ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
@@ -1118,24 +1138,15 @@ if (data === "household") {
       const fetchOptions = { bodies: "", markSeen: true };
 
       imap.search(searchCriteria, function (err, results) {
-        if (err) {
-          console.error("❌ IMAP search error:", err.message);
-          bot.sendMessage(chatId, "❌ Error searching Household mails.");
-          imap.end();
-          return;
-        }
-
-        console.log("📊 IMAP search results:", results);
-        if (results.length === 0) {
+        if (err || results.length === 0) {
           bot.sendMessage(chatId, "❌ No recent Household mail found from Netflix.");
           imap.end();
           return;
         }
 
         const latest = results[results.length - 1];
-        console.log("📨 Fetching mail id:", latest);
-
         const f = imap.fetch(latest, fetchOptions);
+
         f.on("message", function (msgFetch) {
           let rawEmail = "";
           msgFetch.on("body", function (stream) {
