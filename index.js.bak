@@ -1094,15 +1094,15 @@ if (data === "signin") {
   return;
 }
 
-// --- HOUSEHOLD (new logic like reset) ---
+// --- HOUSEHOLD (final, production-clean) ---
 if (data === "household") {
-  console.log("➡ Household logic entered successfully");
-  //bot.sendMessage(chatId, "📩 Household button pressed, checking Gmail...");
-
   if (!isAdmin) {
     const ok = await isAuthorized(fromId);
     if (!ok) {
-      return bot.sendMessage(chatId, "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership.");
+      return bot.sendMessage(
+        chatId,
+        "🚫 You are not a member of this bot.\nPlease Redeem Your license Key to get membership."
+      );
     }
   }
 
@@ -1110,7 +1110,8 @@ if (data === "household") {
   if (!info) return bot.sendMessage(chatId, "⚠️ Please ask admin to set Gmail.");
   const { email, password } = info;
 
-  bot.sendMessage(chatId, "⏳ Reading Gmail inbox for Household mail...");
+  // user-facing minimal message
+  await bot.sendMessage(chatId, "⏳ Reading Gmail inbox for Household mail...");
 
   const imap = new Imap({
     user: email,
@@ -1122,18 +1123,21 @@ if (data === "household") {
   });
 
   imap.once("ready", function () {
-    imap.openBox("INBOX", false, function (err, box) {
+    imap.openBox("INBOX", false, function (err) {
       if (err) {
         bot.sendMessage(chatId, `❌ INBOX error: ${err.message}`);
         imap.end();
         return;
       }
 
-      // Search last 24 hours (Household or temporary subject)
+      // last 24h + subject hints for both flows
       const searchCriteria = [
         ["FROM", "Netflix"],
         ["SINCE", new Date(Date.now() - 24 * 60 * 60 * 1000)],
-        ["OR", ["SUBJECT", "Household"], ["SUBJECT", "temporary"]],
+        ["OR",
+          ["SUBJECT", "Household"],
+          ["OR", ["SUBJECT", "temporary"], ["SUBJECT", "access code"]]
+        ],
       ];
       const fetchOptions = { bodies: "", markSeen: true };
 
@@ -1144,56 +1148,59 @@ if (data === "household") {
           return;
         }
 
-        const latest = results[results.length - 1];
-        const f = imap.fetch(latest, fetchOptions);
+        // latest mail
+        const f = imap.fetch(results[results.length - 1], fetchOptions);
 
         f.on("message", function (msgFetch) {
-          let rawEmail = "";
+          let raw = "";
           msgFetch.on("body", function (stream) {
-            stream.on("data", (chunk) => (rawEmail += chunk.toString("utf8")));
-            stream.on("end", function () {
+            stream.on("data", (c) => (raw += c.toString("utf8")));
+            stream.on("end", async function () {
               try {
-                const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
+                const decoded = quotedPrintable.decode(raw).toString("utf8");
 
-                // Extract all Netflix links
-                const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
-                console.log("🔗 Extracted Netflix links:", allLinks);
+                // unescape minimal entities (e.g., &amp;)
+                const unescape = (s) => (s || "").replace(/&amp;/g, "&");
 
-                // Filter only "Yes. This Was Me" or "Get Code"
-                const householdLinks = allLinks.filter(
-                  (link) =>
-                    decoded.toLowerCase().includes("yes. this was me") && link.toLowerCase().includes("yes") ||
-                    decoded.toLowerCase().includes("get code") && link.toLowerCase().includes("code")
-                );
+                // grab all netflix links
+                const allLinks =
+                  decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()]+/gi) || [];
 
-                console.log("✅ Filtered household links:", householdLinks);
+                // keep only household actions
+                const householdLinks = allLinks
+                  .map(unescape)
+                  .filter(
+                    (u) =>
+                      /account\/travel\/verify/i.test(u) ||                     // Get Code
+                      /account\/update-primary-location/i.test(u)               // Yes, This Was Me
+                  );
 
-                if (householdLinks.length > 0) {
-                  for (let link of householdLinks) {
-                    bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
+                if (householdLinks.length) {
+                  const uniq = [...new Set(householdLinks)];
+                  for (const link of uniq) {
+                    await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
                   }
                 } else {
-                  bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
+                  await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
                 }
               } catch (e) {
-                console.error("❌ Household parse error:", e.message);
-                bot.sendMessage(chatId, "❌ Error reading household email.");
+                console.error("Household parse error:", e.message);
+                await bot.sendMessage(chatId, "❌ Error reading household email.");
               }
               imap.end();
             });
           });
         });
 
-        f.once("error", (err) => {
-          console.error("❌ Fetch Error:", err.message);
+        f.once("error", function (err) {
           bot.sendMessage(chatId, `❌ Fetch Error: ${err.message}`);
+          imap.end();
         });
       });
     });
   });
 
   imap.once("error", function (err) {
-    console.error("❌ IMAP Error:", err.message);
     bot.sendMessage(chatId, `❌ IMAP Error: ${err.message}`);
   });
 
