@@ -1173,40 +1173,43 @@ if (data === "household") {
           let raw = "";
           msgFetch.on("body", function (stream) {
             stream.on("data", (c) => (raw += c.toString("utf8")));
-            stream.on("end", async function () {
-              try {
-                const decoded = quotedPrintable.decode(raw).toString("utf8");
+stream.on("end", async function () {
+  try {
+    const decoded = quotedPrintable.decode(raw).toString("utf8");
 
-                // unescape minimal entities (e.g., &amp;)
-                const unescape = (s) => (s || "").replace(/&amp;/g, "&");
+    // ✅ पहले mail को English में translate करो
+    let translated = await translateToEnglish(decoded);
 
-                // grab all netflix links
-                const allLinks =
-                  decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()]+/gi) || [];
+    // unescape minimal entities (e.g., &amp;)
+    const unescape = (s) => (s || "").replace(/&amp;/g, "&");
 
-                // keep only household actions
-                const householdLinks = allLinks
-                  .map(unescape)
-                  .filter(
-                    (u) =>
-                      /account\/travel\/verify/i.test(u) ||                     // Get Code
-                      /account\/update-primary-location/i.test(u)               // Yes, This Was Me
-                  );
+    // grab all netflix links
+    const allLinks =
+      translated.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()]+/gi) || [];
 
-                if (householdLinks.length) {
-                  const uniq = [...new Set(householdLinks)];
-                  for (const link of uniq) {
-                    await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
-                  }
-                } else {
-                  await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
-                }
-              } catch (e) {
-                console.error("Household parse error:", e.message);
-                await bot.sendMessage(chatId, "❌ Error reading household email.");
-              }
-              imap.end();
-            });
+    // keep only household actions
+    const householdLinks = allLinks
+      .map(unescape)
+      .filter(
+        (u) =>
+          /account\/travel\/verify/i.test(u) ||                     
+          /account\/update-primary-location/i.test(u)               
+      );
+
+    if (householdLinks.length) {
+      const uniq = [...new Set(householdLinks)];
+      for (const link of uniq) {
+        await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
+      }
+    } else {
+      await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
+    }
+  } catch (e) {
+    console.error("Household parse error:", e.message);
+    await bot.sendMessage(chatId, "❌ Error reading household email.");
+  }
+  imap.end();
+});
           });
         });
 

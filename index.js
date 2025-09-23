@@ -8,7 +8,7 @@ const crypto = require("crypto");
 const quotedPrintable = require("quoted-printable");
 const { Pool } = require("pg");
 
-const translate = require('@vitalets/google-translate-api');
+const translate = require('@vitalets/google-translate-api').default;
 
 async function translateToEnglish(text) {
   try {
