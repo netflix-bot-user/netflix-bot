@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@vitalets/google-translate-api": "^9.2.1",
     "dotenv": "^17.2.0",
     "imap": "^0.8.19",
     "mailparser": "^3.7.4",
