@@ -8,18 +8,6 @@ const crypto = require("crypto");
 const quotedPrintable = require("quoted-printable");
 const { Pool } = require("pg");
 
-const translate = require('@vitalets/google-translate-api').default;
-
-async function translateToEnglish(text) {
-  try {
-    const res = await translate(text, { to: 'en' });
-    return res.text;
-  } catch (err) {
-    console.error("Translation error:", err.message);
-    return text; // अगर translation fail हो जाए तो original text return होगा
-  }
-}
-
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const db = new Pool({
@@ -976,28 +964,23 @@ if (data === "resetpass") {
               let rawEmail = "";
               msgFetch.on("body", function (stream) {
                 stream.on("data", chunk => rawEmail += chunk.toString("utf8"));
-stream.on("end", async function () {
-  try {
-    const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
+                stream.on("end", function () {
+                  try {
+                    const decoded = quotedPrintable.decode(rawEmail).toString("utf8");
+                    const allLinks = decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
+                    const resetLink = allLinks.find(link => link.toLowerCase().includes("password"));
 
-    // ✅ पहले mail को English में translate करो
-    let translated = await translateToEnglish(decoded);
-
-    // अब English text पर काम करो
-    const allLinks = translated.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()\[\]]+/gi) || [];
-    const resetLink = allLinks.find(link => link.toLowerCase().includes("password"));
-
-    if (resetLink) {
-      bot.sendMessage(chatId, `Hi @${username},\n🔁 Netflix Password Reset Link:\n${resetLink}`);
-    } else {
-      bot.sendMessage(chatId, "❌ No password reset link found.");
-    }
-  } catch (e) {
-    console.error("resetpass parse error:", e.message);
-    bot.sendMessage(chatId, "❌ Error reading the email.");
-  }
-  imap.end();
-});
+                    if (resetLink) {
+                      bot.sendMessage(chatId, `Hi @${username},\n🔁 Netflix Password Reset Link:\n${resetLink}`);
+                    } else {
+                      bot.sendMessage(chatId, "❌ No password reset link found.");
+                    }
+                  } catch (e) {
+                    console.error("resetpass parse error:", e.message);
+                    bot.sendMessage(chatId, "❌ Error reading the email.");
+                  }
+                  imap.end();
+                });
               });
             });
 
@@ -1075,8 +1058,7 @@ if (data === "signin") {
                 return;
               }
 
-              let body = parsed.text || "";
-              body = await translateToEnglish(body);
+              const body = parsed.text || "";
 
               if (!responded && body.toLowerCase().includes("sign in to netflix")) {
                 const codeMatch = body.match(/\b\d{4}\b/);
@@ -1173,43 +1155,40 @@ if (data === "household") {
           let raw = "";
           msgFetch.on("body", function (stream) {
             stream.on("data", (c) => (raw += c.toString("utf8")));
-stream.on("end", async function () {
-  try {
-    const decoded = quotedPrintable.decode(raw).toString("utf8");
+            stream.on("end", async function () {
+              try {
+                const decoded = quotedPrintable.decode(raw).toString("utf8");
 
-    // ✅ पहले mail को English में translate करो
-    let translated = await translateToEnglish(decoded);
+                // unescape minimal entities (e.g., &amp;)
+                const unescape = (s) => (s || "").replace(/&amp;/g, "&");
 
-    // unescape minimal entities (e.g., &amp;)
-    const unescape = (s) => (s || "").replace(/&amp;/g, "&");
+                // grab all netflix links
+                const allLinks =
+                  decoded.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()]+/gi) || [];
 
-    // grab all netflix links
-    const allLinks =
-      translated.match(/https:\/\/www\.netflix\.com\/[^\s<>"'()]+/gi) || [];
+                // keep only household actions
+                const householdLinks = allLinks
+                  .map(unescape)
+                  .filter(
+                    (u) =>
+                      /account\/travel\/verify/i.test(u) ||                     // Get Code
+                      /account\/update-primary-location/i.test(u)               // Yes, This Was Me
+                  );
 
-    // keep only household actions
-    const householdLinks = allLinks
-      .map(unescape)
-      .filter(
-        (u) =>
-          /account\/travel\/verify/i.test(u) ||                     
-          /account\/update-primary-location/i.test(u)               
-      );
-
-    if (householdLinks.length) {
-      const uniq = [...new Set(householdLinks)];
-      for (const link of uniq) {
-        await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
-      }
-    } else {
-      await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
-    }
-  } catch (e) {
-    console.error("Household parse error:", e.message);
-    await bot.sendMessage(chatId, "❌ Error reading household email.");
-  }
-  imap.end();
-});
+                if (householdLinks.length) {
+                  const uniq = [...new Set(householdLinks)];
+                  for (const link of uniq) {
+                    await bot.sendMessage(chatId, `🏠 Netflix Household Link:\n${link}`);
+                  }
+                } else {
+                  await bot.sendMessage(chatId, "❌ No valid household link found in this mail.");
+                }
+              } catch (e) {
+                console.error("Household parse error:", e.message);
+                await bot.sendMessage(chatId, "❌ Error reading household email.");
+              }
+              imap.end();
+            });
           });
         });
 
