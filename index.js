@@ -726,27 +726,33 @@ if (data === "accounts") {
         });
       }
 
-      let textMsg = "📂 <b>All Accounts</b>\n\n";
-      res.rows.forEach(row => {
-        const email = escapeHtml(row.email || "");
-        const expiry = row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A";
-        const buyerUsername = escapeHtml(row.username || "unknown");
-        const buyerId = escapeHtml(row.user_id || row.buyer_id || "");
-        textMsg += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n👤 Buyer: @${buyerUsername} (ID: ${buyerId})\n\n`;
-      });
+      let allText = "📂 <b>All Accounts</b>\n\n";
+res.rows.forEach(row => {
+  const email = escapeHtml(row.email || "");
+  const expiry = row.expiry ? new Date(row.expiry).toLocaleDateString() : "N/A";
+  const buyerUsername = escapeHtml(row.username || "unknown");
+  const buyerId = escapeHtml(row.user_id || row.buyer_id || "");
+  allText += `🆔 <b>${row.id}</b>\n📧 ${email}\n⏳ Expiry: ${expiry}\n👤 Buyer: @${buyerUsername} (ID: ${buyerId})\n\n`;
+});
 
-      return bot.sendMessage(chatId, textMsg, {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✏️ Edit Accounts", callback_data: "edit_accounts" }],
-            [
-              { text: "➕ Add Account", callback_data: "add_account" },
-              { text: "➖ Remove Account", callback_data: "remove_account" }
-            ]
-          ]
-        }
-      });
+// Message को 4000-character के हिस्सों में भेजना
+const chunks = allText.match(/[\s\S]{1,3500}/g) || [];
+for (const chunk of chunks) {
+  await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+}
+
+// आखिर में control buttons भेजना
+await bot.sendMessage(chatId, "⚙️ Manage Accounts:", {
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: "✏️ Edit Accounts", callback_data: "edit_accounts" }],
+      [
+        { text: "➕ Add Account", callback_data: "add_account" },
+        { text: "➖ Remove Account", callback_data: "remove_account" }
+      ]
+    ]
+  }
+});
 
     } else {
       const res = await db.query(`SELECT id, email, expiry FROM accounts WHERE buyer_id = $1 ORDER BY expiry ASC`, [fromId]);
