@@ -634,7 +634,8 @@ if (data === "redeem") {
     }
 
     // 🎯 Redeem Key Handler (message listener)
-bot.on("message", async (msg) => {
+	/*
+	bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
 
     // अगर यूज़र redeem mode में है
@@ -689,6 +690,7 @@ bot.on("message", async (msg) => {
         delete awaitingKey[chatId];
     }
 });
+*/
 
 	// helper: escape text for HTML parse_mode
 function escapeHtml(text) {
