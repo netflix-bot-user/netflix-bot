@@ -634,63 +634,60 @@ if (data === "redeem") {
     }
 
     // 🎯 Redeem Key Handler (message listener)
-	/*
-	bot.on("message", async (msg) => {
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
 
-    // अगर यूज़र redeem mode में है
-    if (awaitingKey[chatId]) {
-        const keyInput = msg.text.trim();
-        console.log("DEBUG: Redeem request for key =", keyInput);
+    // अगर redeem mode में नहीं है → कुछ मत करो
+    if (!awaitingKey[chatId]) return;
 
-        try {
-            // Key ढूंढो
-            const res = await db.query(
-                `SELECT * FROM license_keys 
-                 WHERE license_key = $1
-                 AND used = false
-                 AND (expires IS NULL OR expires > NOW())`,
-                [keyInput]
-            );
+    const keyInput = msg.text.trim();
+    console.log("DEBUG: Redeem request for key =", keyInput);
 
-            if (res.rows.length === 0) {
-                delete awaitingKey[chatId];
-                return bot.sendMessage(chatId, "❌ Invalid or expired key.");
-            }
+    try {
+        const res = await db.query(
+            `SELECT * FROM license_keys 
+             WHERE license_key = $1
+             AND used = false
+             AND (expires IS NULL OR expires > NOW())`,
+            [keyInput]
+        );
 
-            const keyData = res.rows[0];
-
-            // ✅ Mark key as used
-            await db.query(
-                `UPDATE license_keys 
-                 SET used = true, used_by = $1, used_at = NOW()
-                 WHERE license_key = $2`,
-                [chatId, keyInput]
-            );
-
-            // Membership expiry date निकालो
-            const expiry = new Date();
-            expiry.setMonth(expiry.getMonth() + keyData.duration_months);
-
-            // Authorized user save करो
-            await saveAuthorizedUser(chatId.toString(), msg.from.username || msg.from.first_name, expiry.toISOString());
-
-            bot.sendMessage(
-                chatId, 
-                `✅ Key redeemed successfully!\nMembership activated for ${keyData.duration_months} month(s).\nYour Key: \`${keyInput}\``,
-                { parse_mode: "Markdown" }
-            );
-
-        } catch (e) {
-            console.error("Redeem key error:", e);
-            bot.sendMessage(chatId, "⚠️ Error processing key.");
+        if (res.rows.length === 0) {
+            delete awaitingKey[chatId];
+            return bot.sendMessage(chatId, "❌ Invalid or expired key.");
         }
 
-        // आखिर में mode reset कर दो
-        delete awaitingKey[chatId];
+        const keyData = res.rows[0];
+
+        await db.query(
+            `UPDATE license_keys 
+             SET used = true, used_by = $1, used_at = NOW()
+             WHERE license_key = $2`,
+            [chatId, keyInput]
+        );
+
+        const expiry = new Date();
+        expiry.setMonth(expiry.getMonth() + keyData.duration_months);
+
+        await saveAuthorizedUser(
+            chatId.toString(),
+            msg.from.username || msg.from.first_name,
+            expiry.toISOString()
+        );
+
+        bot.sendMessage(
+            chatId, 
+            `✅ Key redeemed successfully!\nMembership activated for ${keyData.duration_months} month(s).\nYour Key: \`${keyInput}\``,
+            { parse_mode: "Markdown" }
+        );
+
+    } catch (e) {
+        console.error("Redeem key error:", e);
+        bot.sendMessage(chatId, "⚠️ Error processing key.");
     }
+
+    delete awaitingKey[chatId];
 });
-*/
 
 	// helper: escape text for HTML parse_mode
 function escapeHtml(text) {
